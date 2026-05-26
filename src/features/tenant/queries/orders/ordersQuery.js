@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { toast } from 'react-hot-toast'
 import { 
   ordersApi, 
@@ -19,8 +19,8 @@ export const orderKeys = {
    trips: () => ['trips'],
    tripList: (params) => [...orderKeys.trips(), 'list', { params }],
    tripDetail: (id) => [...orderKeys.trips(), 'detail', id],
-   tripStops: (id) => [...orderKeys.tripDetail(id), 'stops'],
-   tripStatusHistory: (id) => [...orderKeys.tripDetail(id), 'status-history'],
+   tripStops: (id, params = {}) => [...orderKeys.tripDetail(id), 'stops', { params }],
+   tripStatusHistory: (id, params = {}) => [...orderKeys.tripDetail(id), 'status-history', { params }],
    tripDocuments: (id) => [...orderKeys.tripDetail(id), 'documents'],
    tripExpenses: (id) => [...orderKeys.tripDetail(id), 'expenses'],
    tripCharges: (id) => [...orderKeys.tripDetail(id), 'charges'],
@@ -95,6 +95,13 @@ const normalizeListResponse = (data) => {
   if (Array.isArray(data)) return data
   if (Array.isArray(data?.results)) return data.results
   return []
+}
+
+/** Shared cache tuning for trip surfaces (reduces flicker on LR switch / refocus). */
+const TRIP_QUERY_OPTIONS = {
+  staleTime: 30_000,
+  gcTime: 5 * 60_000,
+  placeholderData: keepPreviousData,
 }
 
 // ─── 1. ORDER (LR) HOOKS ─────────────────────────────────────────────────────
@@ -186,6 +193,7 @@ export const useTrips = (params) => {
   return useQuery({
     queryKey: orderKeys.tripList(params),
     queryFn: () => tripsApi.list(params),
+    ...TRIP_QUERY_OPTIONS,
     onError: (err) => handleApiError(err, 'Failed to fetch trips'),
   })
 }
@@ -195,6 +203,7 @@ export const useTripDetail = (id) => {
     queryKey: orderKeys.tripDetail(id),
     queryFn: () => tripsApi.get(id),
     enabled: !!id,
+    ...TRIP_QUERY_OPTIONS,
     onError: (err) => handleApiError(err, 'Failed to fetch trip details'),
   })
 }
@@ -236,6 +245,8 @@ export const useUpdateTrip = () => {
       ].filter(Boolean)
       queryClient.invalidateQueries({ queryKey: orderKeys.trips() })
       queryClient.invalidateQueries({ queryKey: orderKeys.tripDetail(id) })
+      queryClient.invalidateQueries({ queryKey: [...orderKeys.tripDetail(id), 'stops'] })
+      queryClient.invalidateQueries({ queryKey: [...orderKeys.tripDetail(id), 'status-history'] })
       queryClient.invalidateQueries({ queryKey: orderKeys.all })
       Array.from(new Set(orderIds)).forEach((orderId) => {
         queryClient.invalidateQueries({ queryKey: orderKeys.detail(orderId) })
@@ -264,11 +275,14 @@ export const useDeleteTrip = () => {
 
 // ─── 2.1 TRIP SUB-RESOURCE HOOKS ─────────────────────────────────────────────
 
-export const useTripStops = (tripId) => {
+export const useTripStops = (tripId, params = {}) => {
+  const { order_id, ...rest } = params || {}
+  const apiParams = order_id ? { order_id, ...rest } : rest
   return useQuery({
-    queryKey: orderKeys.tripStops(tripId),
-    queryFn: async () => normalizeListResponse(await tripsApi.listStops(tripId)),
+    queryKey: orderKeys.tripStops(tripId, apiParams),
+    queryFn: async () => normalizeListResponse(await tripsApi.listStops(tripId, apiParams)),
     enabled: !!tripId,
+    ...TRIP_QUERY_OPTIONS,
     onError: (err) => handleApiError(err, 'Failed to fetch trip stops'),
   })
 }
@@ -278,7 +292,7 @@ export const useCreateTripStop = (tripId) => {
   return useMutation({
     mutationFn: (data) => tripsApi.createStop(tripId, { ...data, order_id: data?.order_id || null }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: orderKeys.tripStops(tripId) })
+      queryClient.invalidateQueries({ queryKey: [...orderKeys.tripDetail(tripId), 'stops'] })
       toast.success('Trip stop added')
     },
     onError: (err) => handleApiError(err, 'Failed to add trip stop'),
@@ -290,7 +304,7 @@ export const useUpdateTripStop = (tripId) => {
   return useMutation({
     mutationFn: ({ stopId, data }) => tripsApi.updateStop(tripId, stopId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: orderKeys.tripStops(tripId) })
+      queryClient.invalidateQueries({ queryKey: [...orderKeys.tripDetail(tripId), 'stops'] })
       toast.success('Trip stop updated')
     },
     onError: (err) => handleApiError(err, 'Failed to update trip stop'),
@@ -302,29 +316,38 @@ export const useDeleteTripStop = (tripId) => {
   return useMutation({
     mutationFn: (stopId) => tripsApi.deleteStop(tripId, stopId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: orderKeys.tripStops(tripId) })
+      queryClient.invalidateQueries({ queryKey: [...orderKeys.tripDetail(tripId), 'stops'] })
       toast.success('Trip stop deleted')
     },
     onError: (err) => handleApiError(err, 'Failed to delete trip stop'),
   })
 }
 
-export const useTripStatusHistory = (tripId) => {
+export const useTripStatusHistory = (tripId, params = {}) => {
+  const { order_id, ...rest } = params || {}
+  const apiParams = order_id ? { order_id, ...rest } : rest
   return useQuery({
-    queryKey: orderKeys.tripStatusHistory(tripId),
-    queryFn: async () => normalizeListResponse(await tripsApi.listStatusHistory(tripId)),
+    queryKey: orderKeys.tripStatusHistory(tripId, apiParams),
+    queryFn: async () => normalizeListResponse(await tripsApi.listStatusHistory(tripId, apiParams)),
     enabled: !!tripId,
+    ...TRIP_QUERY_OPTIONS,
     onError: (err) => handleApiError(err, 'Failed to fetch trip history'),
   })
 }
 
-export const useTripDocuments = (tripId) => {
+export const useTripDocuments = (tripId, params = {}) => {
   return useQuery({
-    queryKey: orderKeys.tripDocuments(tripId),
-    queryFn: async () => normalizeListResponse(await tripsApi.listDocuments(tripId)),
+    queryKey: [...orderKeys.tripDocuments(tripId), params],
+    queryFn: async () => normalizeListResponse(await tripsApi.listDocuments(tripId, params)),
     enabled: !!tripId,
     onError: (err) => handleApiError(err, 'Failed to fetch trip documents'),
   })
+}
+
+export const useTripPodDocuments = (tripId, orderId) => {
+  const params = { document_type: 'POD' }
+  if (orderId) params.order_id = orderId
+  return useTripDocuments(tripId, params)
 }
 
 export const useCreateTripDocument = (tripId) => {
@@ -336,6 +359,20 @@ export const useCreateTripDocument = (tripId) => {
       toast.success('Document uploaded')
     },
     onError: (err) => handleApiError(err, 'Failed to upload document'),
+  })
+}
+
+export const useUploadTripPod = (tripId) => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (formData) => tripsApi.uploadPod(tripId, formData),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: orderKeys.tripDocuments(tripId) })
+      queryClient.invalidateQueries({ queryKey: orderKeys.deliveries() })
+      queryClient.invalidateQueries({ queryKey: orderKeys.trips() })
+      toast.success('POD copy uploaded')
+    },
+    onError: (err) => handleApiError(err, 'Failed to upload POD'),
   })
 }
 
@@ -470,6 +507,7 @@ export const useTripCargoItems = (tripId, params) => {
     queryKey: [...orderKeys.trips(), 'cargo', tripId, { params }],
     queryFn: () => tripsApi.listCargo(tripId, params),
     enabled: !!tripId,
+    ...TRIP_QUERY_OPTIONS,
     onError: (err) => handleApiError(err, 'Failed to fetch trip cargo items'),
   })
 }
@@ -570,13 +608,12 @@ export const useTripDeliveries = (tripId) => {
   return useQuery({
     queryKey: [...orderKeys.deliveries(), 'trip', tripId],
     queryFn: async () => {
-      const raw = await deliveriesApi.list(tripId ? { trip_id: tripId } : {})
-      const rows = normalizeListResponse(raw)
-      if (!tripId) return rows
-      return rows.filter((d) => String(d.trip_id) === String(tripId))
+      const raw = await tripsApi.listPodDocuments(tripId ? { trip_id: tripId } : {})
+      return normalizeListResponse(raw)
     },
     enabled: !!tripId,
-    onError: (err) => handleApiError(err, 'Failed to fetch trip deliveries'),
+    ...TRIP_QUERY_OPTIONS,
+    onError: (err) => handleApiError(err, 'Failed to fetch trip POD copies'),
   })
 }
 
@@ -592,25 +629,47 @@ export const useDeliveryDetail = (id) => {
 export const useCreatePOD = () => {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (data) => deliveriesApi.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: orderKeys.deliveries() })
-      queryClient.invalidateQueries({ queryKey: orderKeys.trips() })
-      toast.success('Proof of Delivery recorded')
+    mutationFn: async ({ trip_id, tripId, file, order_id, orderId, ...rest }) => {
+      const tid = trip_id || tripId
+      if (!tid || !file) {
+        throw new Error('trip_id and file are required for POD upload')
+      }
+      const formData = new FormData()
+      formData.append('file', file)
+      const oid = order_id || orderId
+      if (oid) formData.append('order_id', oid)
+      Object.entries(rest).forEach(([k, v]) => {
+        if (v != null && v !== '') formData.append(k, v)
+      })
+      return tripsApi.uploadPod(tid, formData)
     },
-    onError: (err) => handleApiError(err, 'Failed to create POD'),
+    onSuccess: (_, vars) => {
+      const tid = vars?.trip_id || vars?.tripId
+      queryClient.invalidateQueries({ queryKey: orderKeys.deliveries() })
+      queryClient.invalidateQueries({ queryKey: [...orderKeys.deliveries(), 'trip'] })
+      if (tid) queryClient.invalidateQueries({ queryKey: orderKeys.tripDocuments(tid) })
+      queryClient.invalidateQueries({ queryKey: orderKeys.trips() })
+      toast.success('POD copy uploaded')
+    },
+    onError: (err) => handleApiError(err, 'Failed to upload POD'),
   })
 }
 
 export const useUpdateDelivery = () => {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, data, fullReplace = false }) => 
-      fullReplace ? deliveriesApi.replace(id, data) : deliveriesApi.update(id, data),
-    onSuccess: (_, { id }) => {
+    mutationFn: ({ id, tripId, trip_id, data }) => {
+      const tid = tripId || trip_id || data?.trip
+      if (!tid) throw new Error('tripId is required to update POD document')
+      return tripsApi.updateDocument(tid, id, data)
+    },
+    onSuccess: (_, { id, tripId, trip_id }) => {
+      const tid = tripId || trip_id
       queryClient.invalidateQueries({ queryKey: orderKeys.deliveries() })
+      queryClient.invalidateQueries({ queryKey: [...orderKeys.deliveries(), 'trip'] })
       queryClient.invalidateQueries({ queryKey: orderKeys.deliveryDetail(id) })
-      toast.success('Delivery record updated')
+      if (tid) queryClient.invalidateQueries({ queryKey: orderKeys.tripDocuments(tid) })
+      toast.success('POD updated')
     },
     onError: (err) => handleApiError(err, 'Update failed'),
   })
@@ -619,11 +678,17 @@ export const useUpdateDelivery = () => {
 export const useDeleteDelivery = () => {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id) => deliveriesApi.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: orderKeys.deliveries() })
-      toast.success('Delivery record deleted')
+    mutationFn: ({ id, tripId, trip_id }) => {
+      const tid = tripId || trip_id
+      if (!tid) throw new Error('tripId is required to delete POD document')
+      return tripsApi.deleteDocument(tid, id)
     },
-    onError: (err) => handleApiError(err, 'Failed to delete delivery record'),
+    onSuccess: (_, { tripId, trip_id }) => {
+      const tid = tripId || trip_id
+      queryClient.invalidateQueries({ queryKey: orderKeys.deliveries() })
+      if (tid) queryClient.invalidateQueries({ queryKey: orderKeys.tripDocuments(tid) })
+      toast.success('POD copy removed')
+    },
+    onError: (err) => handleApiError(err, 'Failed to delete POD'),
   })
 }

@@ -9,6 +9,7 @@ import { useTrips } from '../../queries/orders/ordersQuery';
 import { useDrivers } from '../../queries/drivers/driverCoreQuery';
 import { useVehicles } from '../../queries/vehicles/vehicleQuery';
 import { EditTripModal } from './TripModals';
+import LRTabStrip from './trip/LRTabStrip';
 
 // --- Configuration & Status Badges ---
 const TRIP_STATUS_CONFIG = {
@@ -36,6 +37,7 @@ const STATUS_OPTIONS = [
   'COMPLETED',
   'CANCELLED',
 ];
+const LR_COUNT_OPTIONS = ['All LR Counts', '1', '2-5', '6+'];
 
 const FILTER_SELECT_CLASS =
   'h-9 px-3 rounded-xl border border-gray-200 bg-white text-[11px] font-semibold text-gray-600 shadow-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-[#B3D4FF]';
@@ -86,6 +88,7 @@ export default function TripsMainBody() {
   const [searchInput, setSearchInput] = useState('');
   const [filterStatus, setFilterStatus] = useState('All Status');
   const [sortByCreated, setSortByCreated] = useState('newest');
+  const [lrCountFilter, setLrCountFilter] = useState('All LR Counts');
   const [page, setPage] = useState(1);
 
   const navigate = useNavigate();
@@ -102,6 +105,15 @@ export default function TripsMainBody() {
 
   if (filterStatus !== 'All Status' && trips.length > 0) {
     trips = trips.filter((t) => t.status === filterStatus);
+  }
+  if (lrCountFilter !== 'All LR Counts') {
+    trips = trips.filter((t) => {
+      const count = (t.linked_orders?.length || (t.lr_number ? 1 : 0));
+      if (lrCountFilter === '1') return count === 1;
+      if (lrCountFilter === '2-5') return count >= 2 && count <= 5;
+      if (lrCountFilter === '6+') return count >= 6;
+      return true;
+    });
   }
   const totalCount = tripsData?.count || 0;
 
@@ -136,8 +148,10 @@ export default function TripsMainBody() {
     setIsEditOpen(true);
   };
 
-  const handleViewClick = (trip) => {
-    navigate(`/tenant/dashboard/orders/trips/${trip.id}`);
+  const handleViewClick = (trip, lrId = null) => {
+    const fallbackLrId = trip.linked_orders?.[0]?.order_id || null;
+    const activeLrId = lrId || fallbackLrId;
+    navigate(`/tenant/dashboard/orders/trips/${trip.id}${activeLrId ? `?lr=${activeLrId}` : ''}`);
   };
 
   const handleSearchSubmit = (e) => {
@@ -240,6 +254,18 @@ export default function TripsMainBody() {
                   ))}
                 </select>
                 <select
+                  value={lrCountFilter}
+                  onChange={(e) => {
+                    setLrCountFilter(e.target.value);
+                    setPage(1);
+                  }}
+                  className={`${FILTER_SELECT_CLASS} min-w-[140px]`}
+                >
+                  {LR_COUNT_OPTIONS.map((value) => (
+                    <option key={value} value={value}>{value}</option>
+                  ))}
+                </select>
+                <select
                   value={sortByCreated}
                   onChange={(e) => {
                     setSortByCreated(e.target.value);
@@ -262,7 +288,7 @@ export default function TripsMainBody() {
                       Trip
                     </th>
                     <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100">
-                      Order
+                      LRs
                     </th>
                     <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100">
                       Type
@@ -302,15 +328,16 @@ export default function TripsMainBody() {
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="flex flex-col">
-                            {(trip.linked_orders?.length
-                              ? trip.linked_orders.map((o) => o.lr_number).filter(Boolean)
-                              : [trip.lr_number].filter(Boolean)
-                            ).map((lr) => (
-                              <span key={lr} className="text-[10px] font-bold text-[#0052CC] bg-[#EBF3FF] px-2 py-1 rounded w-fit border border-blue-100/50 mb-1">
-                                {lr}
-                              </span>
-                            ))}
+                          <div className="space-y-2">
+                            <LRTabStrip
+                              linkedOrders={trip.linked_orders?.length ? trip.linked_orders : [{ order_id: trip.order_id, lr_number: trip.lr_number }]}
+                              activeOrderId={null}
+                              onChange={(orderId) => handleViewClick(trip, orderId)}
+                              size="sm"
+                            />
+                            <p className="text-[10px] font-bold text-gray-400">
+                              {trip.linked_orders?.length || (trip.lr_number ? 1 : 0)} LR(s)
+                            </p>
                           </div>
                         </td>
                         <td className="px-6 py-4">
@@ -363,6 +390,14 @@ export default function TripsMainBody() {
                               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-[#EBF3FF] text-[#0052CC] hover:bg-[#0052CC] hover:text-white border border-transparent transition-all"
                             >
                               <Eye size={14} /> View
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleViewClick(trip, trip.linked_orders?.[0]?.order_id)}
+                              title="Open LR View"
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-white text-[#0052CC] hover:bg-blue-50 border border-blue-100 transition-all"
+                            >
+                              Open LR View
                             </button>
                             <button
                               type="button"

@@ -47,6 +47,28 @@ export const vehiclesApi = {
   restore: (id) =>
     axiosInstance.post(`${BASE_VEHICLES}/${id}/restore/`).then(r => r.data),
 
+  /** CSV export — respects same query params as list (filters, search, visibility). */
+  exportCsv: (params) =>
+    axiosInstance.get(`${BASE_VEHICLES}/export/`, {
+      params,
+      responseType: 'blob',
+    }),
+
+  /** CSV import template (headers + sample row). */
+  importTemplate: () =>
+    axiosInstance.get(`${BASE_VEHICLES}/import-template/`, {
+      responseType: 'blob',
+    }),
+
+  /** CSV import — multipart field name must be `file`. */
+  importCsv: (file) => {
+    const form = new FormData()
+    form.append('file', file)
+    return axiosInstance.post(`${BASE_VEHICLES}/import/`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then((r) => r.data)
+  },
+
   getDocuments: (id) =>
     axiosInstance.get(`${BASE_VEHICLES}/${id}/documents/`).then(r => r.data),
 

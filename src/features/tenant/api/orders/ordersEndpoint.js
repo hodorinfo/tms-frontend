@@ -62,8 +62,8 @@ export const tripsApi = {
   },
 
   // --- Sub-resources ---
-  listStops: (tripId) =>
-    axiosInstance.get(`${BASE_TRIPS}/${tripId}/stops/`).then(r => r.data),
+  listStops: (tripId, params) =>
+    axiosInstance.get(`${BASE_TRIPS}/${tripId}/stops/`, { params }).then(r => r.data),
   createStop: (tripId, data) =>
     axiosInstance.post(`${BASE_TRIPS}/${tripId}/stops/`, data).then(r => r.data),
   updateStop: (tripId, stopId, data) =>
@@ -71,17 +71,24 @@ export const tripsApi = {
   deleteStop: (tripId, stopId) =>
     axiosInstance.delete(`${BASE_TRIPS}/${tripId}/stops/${stopId}/`).then(r => r.data),
 
-  listStatusHistory: (tripId) =>
-    axiosInstance.get(`${BASE_TRIPS}/${tripId}/status-history/`).then(r => r.data),
+  listStatusHistory: (tripId, params) =>
+    axiosInstance.get(`${BASE_TRIPS}/${tripId}/status-history/`, { params }).then(r => r.data),
 
-  listDocuments: (tripId) =>
-    axiosInstance.get(`${BASE_TRIPS}/${tripId}/documents/`).then(r => r.data),
+  listDocuments: (tripId, params) =>
+    axiosInstance.get(`${BASE_TRIPS}/${tripId}/documents/`, { params }).then(r => r.data),
   createDocument: (tripId, data) =>
     axiosInstance.post(`${BASE_TRIPS}/${tripId}/documents/`, data).then(r => r.data),
+  uploadPod: (tripId, formData) =>
+    axiosInstance.post(`${BASE_TRIPS}/${tripId}/documents/upload/`, formData).then(r => r.data),
   updateDocument: (tripId, documentId, data) =>
     axiosInstance.patch(`${BASE_TRIPS}/${tripId}/documents/${documentId}/`, data).then(r => r.data),
   deleteDocument: (tripId, documentId) =>
     axiosInstance.delete(`${BASE_TRIPS}/${tripId}/documents/${documentId}/`).then(r => r.data),
+
+  listPodDocuments: (params) =>
+    axiosInstance.get(`${BASE_TRIPS}/pod-documents/`, { params }).then(r => r.data),
+  getPodDocument: (id) =>
+    axiosInstance.get(`${BASE_TRIPS}/pod-documents/${id}/`).then(r => r.data),
 
   listExpenses: (tripId) =>
     axiosInstance.get(`${BASE_TRIPS}/${tripId}/expenses/`).then(r => r.data),
@@ -142,24 +149,20 @@ export const cargoMovementsApi = {
     axiosInstance.post(`${BASE_CARGO}/${cargoId}/movements/`, data).then(r => r.data),
 }
 
-// ─── 5. DELIVERIES (POD) ────────────────────────────────────────────────────
+// ─── 5. POD (TripDocument) — legacy deliveriesApi alias ─────────────────────
 
-const BASE_DELIVERIES = 'api/v1/deliveries'
-
+/** @deprecated Use tripsApi.listPodDocuments / uploadPod / getPodDocument */
 export const deliveriesApi = {
-  list: (params) =>
-    axiosInstance.get(`${BASE_DELIVERIES}/`, { params }).then(r => r.data),
-
-  get: (id) =>
-    axiosInstance.get(`${BASE_DELIVERIES}/${id}/`).then(r => r.data),
-
-  create: (data) =>
-    axiosInstance.post(`${BASE_DELIVERIES}/`, data).then(r => r.data),
-
-  update: (id, data) =>
-    axiosInstance.patch(`${BASE_DELIVERIES}/${id}/`, data).then(r => r.data),
-  replace: (id, data) =>
-    axiosInstance.put(`${BASE_DELIVERIES}/${id}/`, data).then(r => r.data),
-  delete: (id) =>
-    axiosInstance.delete(`${BASE_DELIVERIES}/${id}/`).then(r => r.data),
+  list: (params) => tripsApi.listPodDocuments(params),
+  get: (id) => tripsApi.getPodDocument(id),
+  create: () => Promise.reject(new Error('Use tripsApi.uploadPod(tripId, formData) for POD uploads')),
+  update: (id, data) => {
+    const tripId = data?.trip || data?.trip_id
+    if (!tripId) {
+      return Promise.reject(new Error('trip id required — use tripsApi.updateDocument(tripId, id, data)'))
+    }
+    return tripsApi.updateDocument(tripId, id, data)
+  },
+  replace: (id, data) => deliveriesApi.update(id, data),
+  delete: (id) => Promise.reject(new Error('Use tripsApi.deleteDocument(tripId, id)')),
 }

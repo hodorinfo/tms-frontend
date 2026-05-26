@@ -1,26 +1,31 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, Truck, MapPin, Calendar,
   Map as MapIcon, ChevronRight, Loader2,
   AlertCircle, Hash, Clock, CheckCircle2,
   User, Shield, FileText, Receipt, Edit3,
   CreditCard, History, Plus, ArrowRight,
-  Gauge, Zap, DollarSign, Activity, Package as PackageIcon, Trash2, Save, X
+  Gauge, Zap, DollarSign, Activity, Package as PackageIcon, Trash2, Save, X, Camera
 } from 'lucide-react';
+import { useQueries } from '@tanstack/react-query';
 import {
   useTripDetail, useTripStops, useTripDocuments,
   useTripExpenses, useTripCharges, useTripStatusHistory,
   useOrderDetail, useDeleteTrip, useCreateTripStop,
-  useUpdateTripStop, useDeleteTripStop, useTripDeliveries, useCreatePOD,
+  useUpdateTripStop, useDeleteTripStop, useTripDeliveries, useUploadTripPod, useUpdateTripDocument, useDeleteTripDocument,
   useUpdateTripExpense, useDeleteTripExpense, useUpdateTripCharge, useDeleteTripCharge, useUpdateTrip,
   useTripCargoItems, useTransitionCargoStatus,
+  orderKeys,
 } from '../../queries/orders/ordersQuery';
+import { ordersApi } from '../../api/orders/ordersEndpoint';
 import { useDriverDetail } from '../../queries/drivers/driverCoreQuery';
 import { useVehicle } from '../../queries/vehicles/vehicleQuery';
 import { EditTripModal, AddStopsModal } from './TripModals';
 import { CreateCargoModal } from './CargoModals';
 import { useCurrentUser } from '../../queries/users/rolesPermissionsQuery';
+import LRTabStrip from './trip/LRTabStrip';
+import ScopeBadge from './trip/ScopeBadge';
 
 // --- Shared Components ---
 const Badge = ({ children, className = "", pulse = false }) => (
@@ -203,109 +208,190 @@ const DataRow = ({ label, value, icon: Icon }) => {
 };
 
 // --- Tabs ---
+const LrScopeBanner = ({ activeOrderTab, linkedOrders, stopsCount }) => {
+  const meta = linkedOrders?.find((o) => String(o.order_id) === String(activeOrderTab));
+  if (!activeOrderTab || !meta) return null;
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 text-[11px] text-blue-900">
+      <span className="font-black uppercase tracking-wider text-[10px] text-blue-600">LR context</span>
+      <span className="font-bold">{meta.lr_number || activeOrderTab}</span>
+      {typeof stopsCount === 'number' && (
+        <span className="text-blue-600/80">
+          · {stopsCount} stop{stopsCount === 1 ? '' : 's'}
+        </span>
+      )}
+    </div>
+  );
+};
+
+const formatDateOnly = (val) => {
+  if (!val) return '—';
+  const d = new Date(val);
+  if (Number.isNaN(d.getTime())) return val;
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+const OverviewMeta = ({ label, value, className = '' }) => (
+  <div className={className}>
+    <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</dt>
+    <dd className="mt-0.5 text-sm font-medium text-slate-900 break-words">{value ?? '—'}</dd>
+  </div>
+);
+
 const OverviewTab = ({
   trip,
   order,
   navigate,
-  originDisplay,
-  destinationDisplay,
-  linkedOrders,
-  stops,
+  lrRows = [],
   activeOrderTab,
   setActiveOrderTab,
+  ordersLoading,
 }) => {
-  const routeStops = (stops || []).filter((s) => String(s.order_id || '') === String(activeOrderTab || ''));
-  return (
-  <div className="space-y-8">
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-      <InfoCard label="status" value={trip.status} icon={Clock} accent />
-      <InfoCard label="trip_number" value={trip.trip_number} icon={Hash} />
-      <InfoCard label="lr_number" value={trip.lr_number} icon={FileText} />
-      <InfoCard label="trip_type" value={trip.trip_type} icon={Truck} />
-    </div>
+  const activeLink =
+    lrRows.find((r) => String(r.order_id) === String(activeOrderTab)) || lrRows[0] || null;
+  const activeOrder = activeLink?.order || order;
+  const origin = (activeOrder?.consignor_address || '').trim() || '—';
+  const destination = (activeOrder?.consignee_address || '').trim() || '—';
+  const multiLr = lrRows.length > 1;
 
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-      <div className="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm flex flex-col h-full overflow-hidden">
-        <SectionHeader icon={MapPin} title="Route Summary" />
-        <div className="mb-4 flex flex-wrap gap-2">
-          {linkedOrders.map((o) => (
-            <button
-              key={o.order_id}
-              type="button"
-              onClick={() => setActiveOrderTab(o.order_id)}
-              className={`px-3 py-1 rounded-lg text-[11px] font-bold border ${
-                String(activeOrderTab) === String(o.order_id)
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-white text-gray-600 border-gray-200'
-              }`}
-            >
-              {o.lr_number || 'LR'}
-            </button>
-          ))}
-        </div>
-        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-1">
-          <DataRow label="origin_address" value={originDisplay} icon={MapPin} />
-          <DataRow label="destination_address" value={destinationDisplay} icon={MapPin} />
-          {routeStops.map((stop) => (
-            <DataRow
-              key={stop.id}
-              label={`Stop #${stop.stop_sequence} (${stop.stop_type})`}
-              value={stop.location_address}
-              icon={MapPin}
-            />
-          ))}
-        </div>
-        <div className="mt-6 pt-6 border-t border-gray-50">
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 px-3 py-2.5 rounded-xl border border-gray-100 inline-block">
-            Managed via Stops tab
-          </p>
-        </div>
+  return (
+    <div className="space-y-4 max-w-5xl">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm border-b border-slate-200 pb-3">
+        <span className="font-semibold text-slate-900">{trip.trip_number}</span>
+        <span className="text-slate-300">·</span>
+        <span className="text-slate-600">{trip.status}</span>
+        <span className="text-slate-300">·</span>
+        <span className="text-slate-600">{trip.trip_type || 'FTL'}</span>
+        {trip.reference_number && (
+          <>
+            <span className="text-slate-300">·</span>
+            <span className="text-slate-500">Ref {trip.reference_number}</span>
+          </>
+        )}
+        <span className="text-slate-300">·</span>
+        <span className="text-slate-500">{lrRows.length} LR{lrRows.length === 1 ? '' : 's'}</span>
       </div>
 
-      <div className="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm flex flex-col h-full overflow-hidden">
-        <SectionHeader icon={Calendar} title="Reference Details" />
-        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-1">
-          <DataRow label="lr_number" value={order?.lr_number || trip.lr_number} icon={FileText} />
-          <DataRow label="reference_number" value={trip.reference_number} icon={Hash} />
-          <DataRow label="created_date" value={formatDateTime(trip.created_date)} icon={Calendar} />
-          <DataRow label="Pickup Date" value={order?.pickup_date || '—'} icon={Calendar} />
-          <DataRow label="Delivery Date" value={order?.delivery_date || '—'} icon={CheckCircle2} />
-          <DataRow
-            label="Linked LRs"
-            value={linkedOrders.map((o) => o.lr_number).filter(Boolean).join(', ') || '—'}
-            icon={FileText}
-          />
+      {multiLr && (
+        <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+          <div className="px-3 py-2 border-b border-slate-100 bg-slate-50/80">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              LR routes on this trip
+            </p>
+          </div>
+          {ordersLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                    <th className="px-3 py-2 font-semibold">LR</th>
+                    <th className="px-3 py-2 font-semibold">Origin</th>
+                    <th className="px-3 py-2 w-8" aria-hidden />
+                    <th className="px-3 py-2 font-semibold">Destination</th>
+                    <th className="px-3 py-2 font-semibold whitespace-nowrap">Pickup</th>
+                    <th className="px-3 py-2 font-semibold whitespace-nowrap">Delivery</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lrRows.map((row) => {
+                    const o = row.order;
+                    const isActive = String(row.order_id) === String(activeOrderTab);
+                    return (
+                      <tr
+                        key={row.order_id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setActiveOrderTab(row.order_id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setActiveOrderTab(row.order_id);
+                          }
+                        }}
+                        className={`border-b border-slate-50 last:border-0 cursor-pointer transition-colors ${
+                          isActive ? 'bg-blue-50/60' : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        <td className="px-3 py-2.5 font-semibold text-slate-900 whitespace-nowrap">
+                          {row.lr_number || '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-slate-700 max-w-[200px]">
+                          <span className="line-clamp-2">{(o?.consignor_address || '—').trim()}</span>
+                        </td>
+                        <td className="px-3 py-2.5 text-slate-300">
+                          <ArrowRight size={14} className="mx-auto" />
+                        </td>
+                        <td className="px-3 py-2.5 text-slate-700 max-w-[200px]">
+                          <span className="line-clamp-2">{(o?.consignee_address || '—').trim()}</span>
+                        </td>
+                        <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap tabular-nums">
+                          {formatDateOnly(o?.pickup_date)}
+                        </td>
+                        <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap tabular-nums">
+                          {formatDateOnly(o?.delivery_date)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-        {trip.order_id && (
-          <div className="mt-6 pt-6 border-t border-gray-50 flex items-center justify-end gap-3">
+      )}
+
+      <div className="rounded-lg border border-slate-200 bg-white p-4">
+        {multiLr && activeLink && (
+          <p className="text-xs font-semibold text-slate-500 mb-3">
+            {activeLink.lr_number}
+            {activeOrder?.reference_number ? ` · ${activeOrder.reference_number}` : ''}
+          </p>
+        )}
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-4 md:gap-6 items-start">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Origin</p>
+            <p className="text-sm text-slate-900 leading-snug">{origin}</p>
+          </div>
+          <ArrowRight className="hidden md:block text-slate-300 mt-5 shrink-0" size={18} />
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Destination</p>
+            <p className="text-sm text-slate-900 leading-snug">{destination}</p>
+          </div>
+        </div>
+
+        <dl className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
+          <OverviewMeta label="LR number" value={activeOrder?.lr_number || activeLink?.lr_number} />
+          <OverviewMeta label="Customer ref" value={activeOrder?.reference_number || activeLink?.reference_number} />
+          <OverviewMeta label="Pickup" value={formatDateOnly(activeOrder?.pickup_date)} />
+          <OverviewMeta label="Delivery" value={formatDateOnly(activeOrder?.delivery_date)} />
+        </dl>
+
+        {(activeOrderTab || trip.order_id) && (
+          <div className="mt-4 pt-3 border-t border-slate-100 flex justify-end">
             <button
               type="button"
-              className="px-6 py-3 text-[11px] font-black text-[#0052CC] bg-blue-50 border border-blue-100 rounded-xl hover:bg-blue-100 transition-all uppercase tracking-widest shadow-sm"
-              onClick={() => navigate(`/tenant/dashboard/orders/${trip.order_id}`)}
+              onClick={() => navigate(`/tenant/dashboard/orders/${activeOrderTab || trip.order_id}`)}
+              className="text-xs font-semibold text-[#0052CC] hover:underline"
             >
-              View Order
+              Open LR booking →
             </button>
           </div>
         )}
       </div>
-    </div>
 
-    {trip.remarks && (
-      <div className="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm">
-        <SectionHeader icon={FileText} title="Trip Remarks" />
-        <p className="text-sm text-[#172B4D] font-bold italic leading-relaxed">"{trip.remarks}"</p>
-      </div>
-    )}
-
-    <div className="bg-gray-50/50 rounded-3xl border border-gray-100 p-8">
-      <SectionHeader icon={Shield} title="Technical Audit Information" />
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <DataRow label="version" value={trip.version} icon={Hash} />
-        <DataRow label="created_at" value={new Date(trip.created_at).toLocaleString()} icon={Clock} />
-        <DataRow label="updated_at" value={new Date(trip.updated_at).toLocaleString()} icon={Clock} />
-      </div>
+      {trip.remarks?.trim() && (
+        <p className="text-sm text-slate-600 border-l-2 border-slate-200 pl-3">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 block mb-0.5">
+            Remarks
+          </span>
+          {trip.remarks}
+        </p>
+      )}
     </div>
-  </div>
   );
 };
 
@@ -352,6 +438,7 @@ const JourneyTab = ({ trip, driver, vehicle, isLoadingNames, altDriver, altVehic
 
 const StopsTab = ({ tripId, stops, isLoading, onCreateStop, onUpdateStopStatus, onDeleteStop }) => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [showCompleted, setShowCompleted] = useState(false);
   const [stopFilters, setStopFilters] = useState({
     stop_sequence: '',
     stop_type: 'ALL',
@@ -371,6 +458,8 @@ const StopsTab = ({ tripId, stops, isLoading, onCreateStop, onUpdateStopStatus, 
   });
 
   const sortedStops = filteredStops.sort((a, b) => (a.stop_sequence || 0) - (b.stop_sequence || 0));
+  const incompleteStops = sortedStops.filter((s) => s.stop_status !== 'COMPLETED');
+  const completedStops = sortedStops.filter((s) => s.stop_status === 'COMPLETED');
   const nextSeq = stopRows.length > 0 ? Math.max(...stopRows.map(s => s.stop_sequence || 0)) + 1 : 1;
 
   const startEditStop = (stop) => {
@@ -458,7 +547,7 @@ const StopsTab = ({ tripId, stops, isLoading, onCreateStop, onUpdateStopStatus, 
         <div className="flex justify-center p-12"><Loader2 className="animate-spin text-blue-600" /></div>
       ) : sortedStops.length > 0 ? (
         <div className="relative pl-8 space-y-6 before:absolute before:left-[15px] before:top-2 before:bottom-2 before:w-0.5 before:bg-gray-100">
-          {sortedStops.map((stop) => (
+          {incompleteStops.map((stop) => (
             <div key={stop.id} className="relative">
               <div className={`absolute -left-[27px] top-1 w-4 h-4 rounded-full border-4 border-white shadow-sm z-10 ${stop.stop_status === 'COMPLETED' ? 'bg-green-500' : 'bg-blue-500'}`} />
               <div className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm">
@@ -502,6 +591,38 @@ const StopsTab = ({ tripId, stops, isLoading, onCreateStop, onUpdateStopStatus, 
               </div>
             </div>
           ))}
+          {completedStops.length > 0 && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowCompleted((v) => !v)}
+                className="mb-2 w-full text-left text-[11px] font-black uppercase tracking-wider text-gray-500 hover:text-blue-600 py-2 px-3 rounded-lg border border-dashed border-gray-200 bg-gray-50/80"
+              >
+                {showCompleted ? 'Hide' : 'Show'} {completedStops.length} completed stop{completedStops.length === 1 ? '' : 's'}
+              </button>
+              {showCompleted
+                ? completedStops.map((stop) => (
+                    <div key={stop.id} className="relative mb-6">
+                      <div className="absolute -left-[27px] top-1 w-4 h-4 rounded-full border-4 border-white shadow-sm z-10 bg-green-500" />
+                      <div className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm opacity-90">
+                        <div className="flex justify-between items-start mb-1 gap-3">
+                          <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                            Stop #{stop.stop_sequence} • {stop.stop_type}
+                          </span>
+                          <Badge className="bg-green-50 text-green-600">COMPLETED</Badge>
+                        </div>
+                        <p className="text-sm font-black text-[#172B4D]">{stop.location_address || '-'}</p>
+                        <p className="text-xs text-gray-500 font-medium">{stop.instructions || 'No instructions'}</p>
+                        <div className="mt-3 flex gap-2 flex-wrap">
+                          <button type="button" onClick={() => startEditStop(stop)} className="px-2 py-1 text-xs rounded bg-slate-100 text-slate-700">Edit</button>
+                          <button type="button" onClick={() => onDeleteStop(stop.id)} className="px-2 py-1 text-xs rounded bg-red-100 text-red-700">Delete</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                : null}
+            </div>
+          )}
         </div>
       ) : (
         <div className="text-center p-12 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
@@ -518,103 +639,224 @@ const StopsTab = ({ tripId, stops, isLoading, onCreateStop, onUpdateStopStatus, 
   );
 };
 
-const DeliveriesTab = ({ tripId, deliveries, stops, createDelivery, isCreating }) => {
-  const deliveryStops = (stops || []).filter((s) => s.stop_type === 'DELIVERY');
-  const [form, setForm] = useState({
-    trip_stop: '',
-    delivery_date: '',
-    received_by_name: '',
-    received_by_relation: '',
-    delivery_status: 'DELIVERED',
-    remarks: '',
-    pod_number: '',
-  });
+const podDocsForLr = (podDocuments, orderId) => {
+  const oid = String(orderId || '');
+  return (podDocuments || []).filter(
+    (d) => d.document_type === 'POD' && (!oid || String(d.order_id || '') === oid)
+  );
+};
 
-  const onSubmit = (e) => {
-    e.preventDefault();
-    if (!form.trip_stop && deliveryStops.length > 1) {
-      return;
-    }
-    createDelivery({
-      trip_id: tripId,
-      trip_stop: form.trip_stop || undefined,
-      ...form,
+const DeliveriesTab = ({
+  tripId,
+  linkedOrders = [],
+  activeOrderId,
+  onActiveOrderChange,
+  podDocuments = [],
+  uploadPod,
+  updateDocument,
+  deleteDocument,
+  isUploading,
+  isUpdating,
+  isDeleting,
+}) => {
+  const resolvedOrderId = activeOrderId || linkedOrders[0]?.order_id;
+  const lrMeta = linkedOrders.find((o) => String(o.order_id) === String(resolvedOrderId));
+  const lrPods = resolvedOrderId ? podDocsForLr(podDocuments, resolvedOrderId) : [];
+  const fileInputRef = React.useRef(null);
+  const [remarksDraft, setRemarksDraft] = useState('');
+  const [editingDocId, setEditingDocId] = useState(null);
+
+  const editingDoc = lrPods.find((d) => d.id === editingDocId) || lrPods[0] || null;
+
+  useEffect(() => {
+    setRemarksDraft(editingDoc?.remarks || '');
+    if (editingDoc?.id) setEditingDocId(editingDoc.id);
+  }, [editingDoc?.id, editingDoc?.remarks, resolvedOrderId]);
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !resolvedOrderId) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('order_id', resolvedOrderId);
+    if (remarksDraft.trim()) formData.append('remarks', remarksDraft.trim());
+    uploadPod(formData, {
+      onSuccess: () => {
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      },
     });
   };
 
+  const handleRemoveDoc = (docId) => {
+    if (!window.confirm('Remove this POD copy?')) return;
+    deleteDocument(docId);
+  };
+
+  const handleSaveRemarks = (e) => {
+    e.preventDefault();
+    if (!editingDoc?.id) return;
+    updateDocument(editingDoc.id, { remarks: remarksDraft });
+  };
+
+  const busy = isUploading || isUpdating || isDeleting;
+
+  if (!linkedOrders.length) {
+    return (
+      <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/80 p-10 text-center text-sm text-gray-500">
+        No LRs are linked to this trip yet. Link orders to the trip before uploading POD copies.
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <SectionHeader icon={FileText} title="Deliveries / POD" />
-      <form onSubmit={onSubmit} className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div>
-            <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Delivery Stop</label>
-            <select
-              className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
-              value={form.trip_stop}
-              onChange={(e) => setForm((p) => ({ ...p, trip_stop: e.target.value }))}
-              required={deliveryStops.length > 1}
-            >
-              <option value="">Select delivery stop</option>
-              {deliveryStops.map((stop) => (
-                <option key={stop.id} value={stop.id}>
-                  #{stop.stop_sequence} - {stop.location_address || 'Delivery Stop'}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Delivery Date</label>
-            <input type="date" className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm" value={form.delivery_date} onChange={(e) => setForm((p) => ({ ...p, delivery_date: e.target.value }))} required />
-          </div>
-          <div>
-            <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Received By</label>
-            <input className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm" placeholder="Receiver name" value={form.received_by_name} onChange={(e) => setForm((p) => ({ ...p, received_by_name: e.target.value }))} required />
-          </div>
-          <div>
-            <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Relation</label>
-            <input className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm" placeholder="Receiver relation" value={form.received_by_relation} onChange={(e) => setForm((p) => ({ ...p, received_by_relation: e.target.value }))} />
-          </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div>
-            <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Delivery Status</label>
-            <select className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm" value={form.delivery_status} onChange={(e) => setForm((p) => ({ ...p, delivery_status: e.target.value }))}>
-              <option value="DELIVERED">DELIVERED</option>
-              <option value="PARTIAL">PARTIAL</option>
-              <option value="DAMAGED">DAMAGED</option>
-              <option value="REFUSED">REFUSED</option>
-              <option value="RETURNED">RETURNED</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">POD Number</label>
-            <input className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm" placeholder="Optional POD number" value={form.pod_number} onChange={(e) => setForm((p) => ({ ...p, pod_number: e.target.value }))} />
-          </div>
-          <button type="submit" disabled={isCreating} className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-bold">
-            {isCreating ? 'Creating...' : 'Create Delivery'}
-          </button>
-        </div>
-        <div>
-          <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Remarks</label>
-          <textarea className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm" rows={2} placeholder="Remarks" value={form.remarks} onChange={(e) => setForm((p) => ({ ...p, remarks: e.target.value }))} />
-        </div>
-      </form>
+      <SectionHeader icon={Camera} title="Proof of delivery (company POD)" />
+      <p className="text-xs text-gray-500 -mt-2 max-w-2xl">
+        Upload scanned or photographed POD copies for each LR on this trip. Each file is stored as a trip document (type POD).
+      </p>
 
-      <div className="space-y-3">
-        {deliveries?.length ? deliveries.map((d) => (
-          <div key={d.id} className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm">
-            <div className="flex justify-between items-center">
-              <p className="text-sm font-black text-[#172B4D]">{d.pod_number || d.id}</p>
-              <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100">{d.delivery_status}</Badge>
-            </div>
-            <p className="text-xs text-gray-500 mt-1">Date: {d.delivery_date}</p>
-            <p className="text-xs text-gray-500">Receiver: {d.received_by_name}</p>
+      {linkedOrders.length > 1 && (
+        <div className="rounded-xl border border-gray-100 bg-white p-3 shadow-sm">
+          <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">All LRs — POD preview</p>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {linkedOrders.map((o) => {
+              const pods = podDocsForLr(podDocuments, o.order_id);
+              const thumb = pods[0]?.file_url;
+              const active = String(activeOrderId || '') === String(o.order_id);
+              return (
+                <button
+                  key={o.order_id}
+                  type="button"
+                  onClick={() => onActiveOrderChange(o.order_id)}
+                  className={`shrink-0 flex flex-col items-center gap-1 rounded-lg border p-2 min-w-[76px] transition-colors ${
+                    active ? 'border-blue-500 bg-blue-50' : 'border-gray-100 bg-gray-50/80 hover:border-blue-200'
+                  }`}
+                >
+                  <div className="h-12 w-12 rounded-md bg-gray-200 overflow-hidden flex items-center justify-center">
+                    {thumb ? (
+                      <img src={thumb} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="text-[8px] font-bold text-gray-400 uppercase px-1 text-center leading-tight">No file</span>
+                    )}
+                  </div>
+                  <span className="text-[9px] font-bold text-gray-600 truncate max-w-[72px]">{o.lr_number || 'LR'}</span>
+                  {pods.length > 0 && (
+                    <span className="text-[8px] text-gray-400">{pods.length} file{pods.length !== 1 ? 's' : ''}</span>
+                  )}
+                </button>
+              );
+            })}
           </div>
-        )) : (
-          <div className="text-center p-8 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-            <p className="text-gray-400 text-sm">No deliveries recorded for this trip.</p>
+        </div>
+      )}
+
+      <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Select LR</p>
+        <LRTabStrip
+          linkedOrders={linkedOrders}
+          activeOrderId={resolvedOrderId}
+          onChange={onActiveOrderChange}
+          maxVisible={8}
+        />
+      </div>
+
+      <div className="space-y-4 rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-sm font-black text-[#172B4D]">POD — {lrMeta?.lr_number || 'LR'}</p>
+            <p className="text-[11px] text-gray-500 mt-0.5">
+              {lrPods.length} copy{lrPods.length !== 1 ? 'ies' : ''} on file
+            </p>
           </div>
+          {lrPods.length === 0 && (
+            <Badge className="bg-slate-50 text-slate-600 border-slate-100">No POD uploaded yet</Badge>
+          )}
+        </div>
+
+        {lrPods.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {lrPods.map((doc) => (
+              <div key={doc.id} className="group relative rounded-lg border border-gray-100 overflow-hidden bg-gray-50 aspect-square">
+                {doc.file_url?.toLowerCase().includes('.pdf') ? (
+                  <a
+                    href={doc.file_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex flex-col items-center justify-center h-full p-2 text-center text-xs font-bold text-blue-600"
+                  >
+                    PDF
+                    <span className="text-[9px] font-normal text-gray-500 mt-1 truncate w-full">{doc.document_name || 'POD'}</span>
+                  </a>
+                ) : (
+                  <img src={doc.file_url} alt="POD" className="w-full h-full object-cover" onError={(ev) => { ev.target.style.display = 'none'; }} />
+                )}
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setEditingDocId(doc.id)}
+                    className="opacity-0 group-hover:opacity-100 px-2 py-1 rounded-md bg-white text-blue-600 text-xs font-bold shadow disabled:opacity-40"
+                  >
+                    Notes
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => handleRemoveDoc(doc.id)}
+                    className="opacity-0 group-hover:opacity-100 px-2 py-1 rounded-md bg-white text-red-600 text-xs font-bold shadow disabled:opacity-40"
+                  >
+                    Remove
+                  </button>
+                </div>
+                {doc.delivery_status && (
+                  <span className="absolute bottom-1 left-1 text-[8px] font-bold uppercase bg-white/90 px-1 rounded text-gray-600">
+                    {doc.delivery_status}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex flex-col sm:flex-row gap-2 sm:items-end border-t border-gray-50 pt-4">
+          <div className="flex-1 min-w-0">
+            <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Upload POD copy</label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+              className="w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-700 file:font-bold"
+              onChange={handleFileChange}
+              disabled={busy || !resolvedOrderId}
+            />
+            <p className="text-[10px] text-gray-400 mt-1">JPEG, PNG, WebP, GIF, or PDF — max 10 MB</p>
+          </div>
+          {isUploading && (
+            <span className="text-sm font-bold text-blue-600 shrink-0">Uploading…</span>
+          )}
+        </div>
+
+        {editingDoc && (
+          <form onSubmit={handleSaveRemarks} className="space-y-2 border-t border-gray-50 pt-4">
+            <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+              Notes — {editingDoc.document_name || 'POD'}
+            </label>
+            <textarea
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
+              rows={2}
+              placeholder="Reference, courier receipt, or other context"
+              value={remarksDraft}
+              onChange={(e) => setRemarksDraft(e.target.value)}
+              disabled={busy}
+            />
+            <button
+              type="submit"
+              disabled={busy || remarksDraft === (editingDoc.remarks || '')}
+              className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {isUpdating ? 'Saving…' : 'Save notes'}
+            </button>
+          </form>
         )}
       </div>
     </div>
@@ -823,8 +1065,8 @@ const HistoryTab = ({ history, isLoading }) => {
 export default function TripDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('overview');
-  const [activeOrderTab, setActiveOrderTab] = useState(null);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isCreateCargoOpen, setIsCreateCargoOpen] = useState(false);
   const [editFinanceItem, setEditFinanceItem] = useState(null);
@@ -842,27 +1084,87 @@ export default function TripDetail() {
   };
 
   const { data: trip, isLoading, isError } = useTripDetail(id);
-  const { data: order } = useOrderDetail(trip?.order_id);
-  const { data: stops, isLoading: loadingStops } = useTripStops(id);
+
+  const linkedOrders = useMemo(() => {
+    if (!trip) return [];
+    if (trip.linked_orders?.length) return trip.linked_orders;
+    if (trip.order_id) {
+      return [{ order_id: trip.order_id, lr_number: trip.lr_number, reference_number: trip.reference_number }];
+    }
+    return [];
+  }, [trip?.linked_orders, trip?.order_id, trip?.lr_number, trip?.reference_number]);
+
+  const lrOrderQueries = useQueries({
+    queries: linkedOrders.map((link) => ({
+      queryKey: orderKeys.detail(link.order_id),
+      queryFn: () => ordersApi.get(link.order_id),
+      enabled: !!link.order_id,
+      staleTime: 60_000,
+    })),
+  });
+
+  const lrRows = useMemo(
+    () =>
+      linkedOrders.map((link, index) => ({
+        ...link,
+        order: lrOrderQueries[index]?.data,
+      })),
+    [linkedOrders, lrOrderQueries]
+  );
+
+  const lrOrdersLoading = lrOrderQueries.some((q) => q.isLoading);
+
+  const activeOrderTab = useMemo(() => {
+    const fromUrl = searchParams.get('lr');
+    if (linkedOrders.length) {
+      const hit = linkedOrders.find((o) => String(o.order_id) === String(fromUrl));
+      if (hit) return hit.order_id;
+      return linkedOrders[0]?.order_id ?? null;
+    }
+    return fromUrl || null;
+  }, [searchParams, linkedOrders]);
+
+  const setActiveOrderTab = useCallback(
+    (orderId) => {
+      const next = new URLSearchParams(searchParams);
+      if (orderId != null && orderId !== '') next.set('lr', String(orderId));
+      else next.delete('lr');
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams]
+  );
+
+  // Normalize invalid/missing ?lr= once linked orders are known (URL is source of truth).
+  useEffect(() => {
+    if (!linkedOrders.length) return;
+    const fromUrl = searchParams.get('lr');
+    const valid = linkedOrders.some((o) => String(o.order_id) === String(fromUrl));
+    if (!fromUrl || !valid) {
+      const next = new URLSearchParams(searchParams);
+      next.set('lr', String(linkedOrders[0].order_id));
+      setSearchParams(next, { replace: true });
+    }
+  }, [id, linkedOrders, searchParams, setSearchParams]);
+
+  const stopQueryParams = useMemo(
+    () => (activeOrderTab ? { order_id: activeOrderTab } : {}),
+    [activeOrderTab]
+  );
+
+  const { data: order } = useOrderDetail(activeOrderTab || trip?.order_id);
+  const { data: stops, isLoading: loadingStops } = useTripStops(id, stopQueryParams);
   const { data: expenses, isLoading: loadingExp } = useTripExpenses(id);
   const { data: charges, isLoading: loadingChg } = useTripCharges(id);
   const { data: docs } = useTripDocuments(id);
-  const { data: history, isLoading: loadingHistory } = useTripStatusHistory(id);
-  const { data: tripDeliveries } = useTripDeliveries(id);
-  const linkedOrders = trip?.linked_orders?.length
-    ? trip.linked_orders
-    : (trip?.order_id ? [{ order_id: trip.order_id, lr_number: trip.lr_number, reference_number: trip.reference_number }] : []);
-
-  useEffect(() => {
-    if (!activeOrderTab && linkedOrders.length) {
-      setActiveOrderTab(linkedOrders[0].order_id);
-    }
-  }, [activeOrderTab, linkedOrders]);
+  const { data: history, isLoading: loadingHistory } = useTripStatusHistory(id, stopQueryParams);
+  const { data: tripPodDocs } = useTripDeliveries(id);
+  const uploadPodMutation = useUploadTripPod(id);
+  const updatePodDocMutation = useUpdateTripDocument(id);
+  const deletePodDocMutation = useDeleteTripDocument(id);
 
   const createStopMutation = useCreateTripStop(id);
   const updateStopMutation = useUpdateTripStop(id);
   const deleteStopMutation = useDeleteTripStop(id);
-  const createPODMutation = useCreatePOD();
   const updateTripMutation = useUpdateTrip();
   const updateExpenseMutation = useUpdateTripExpense(id);
   const deleteExpenseMutation = useDeleteTripExpense(id);
@@ -931,6 +1233,21 @@ export default function TripDetail() {
     return v ? (v.registration_number || v.registration) : (fallback || 'Unassigned');
   };
 
+  const flatTripPodDocs = useMemo(() => {
+    const raw = tripPodDocs;
+    return Array.isArray(raw) ? raw : raw?.results || [];
+  }, [tripPodDocs]);
+
+  const sortedStops = useMemo(() => {
+    const stopRows = Array.isArray(stops) ? stops : stops?.results || [];
+    return [...stopRows].sort((a, b) => (a.stop_sequence || 0) - (b.stop_sequence || 0));
+  }, [stops]);
+
+  const scopedHistoryRows = useMemo(() => {
+    const rows = Array.isArray(history) ? history : history?.results || [];
+    return rows;
+  }, [history]);
+
   if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC]"><Loader2 className="animate-spin text-blue-600" /></div>;
   if (isError || !trip) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-[#F8FAFC]">
@@ -953,13 +1270,22 @@ export default function TripDetail() {
   };
   const st = statusMap[trip.status] || statusMap.CREATED;
   const nextStatuses = TRIP_TRANSITIONS[trip.status] || [];
-  const stopRows = Array.isArray(stops) ? stops : stops?.results || [];
-  const sortedStops = [...stopRows].sort((a, b) => (a.stop_sequence || 0) - (b.stop_sequence || 0));
   const firstPickupStop = sortedStops.find((s) => s.stop_type === 'PICKUP' && (s.location_address || '').trim());
   const deliveryStops = sortedStops.filter((s) => s.stop_type === 'DELIVERY' && (s.location_address || '').trim());
   const lastDeliveryStop = deliveryStops.length ? deliveryStops[deliveryStops.length - 1] : null;
-  const originDisplay = firstPickupStop?.location_address || trip.origin_address || trip.origin || 'Delhi';
-  const destinationDisplay = lastDeliveryStop?.location_address || trip.destination_address || trip.destination || 'Mumbai';
+  const activeLrOrder = lrRows.find((r) => String(r.order_id) === String(activeOrderTab))?.order || order;
+  const originDisplay =
+    (activeLrOrder?.consignor_address || '').trim()
+    || firstPickupStop?.location_address
+    || trip.origin_address
+    || trip.origin
+    || '—';
+  const destinationDisplay =
+    (activeLrOrder?.consignee_address || '').trim()
+    || lastDeliveryStop?.location_address
+    || trip.destination_address
+    || trip.destination
+    || '—';
 
   const TABS = [
     { id: 'overview', label: 'Overview', icon: MapIcon },
@@ -968,7 +1294,7 @@ export default function TripDetail() {
     { id: 'cargo', label: 'Cargo', icon: PackageIcon },
     { id: 'stops', label: 'Stops', icon: MapPin, count: (Array.isArray(stops) ? stops : stops?.results)?.length },
     { id: 'history', label: 'Status History', icon: History, count: (Array.isArray(history) ? history : history?.results)?.length },
-    { id: 'deliveries', label: 'Deliveries', icon: FileText, count: (Array.isArray(tripDeliveries) ? tripDeliveries : tripDeliveries?.results)?.length },
+    { id: 'deliveries', label: 'POD', icon: Camera, count: flatTripPodDocs.length },
     { id: 'docs', label: 'Documents', icon: FileText, count: docs?.length },
   ];
 
@@ -982,6 +1308,36 @@ export default function TripDetail() {
           <span className="text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100 cursor-default">{trip.trip_number}</span>
         </div>
 
+        {linkedOrders.length > 0 && (
+          <div className="sticky top-0 z-40 -mx-1 px-1 py-2.5 mb-4 rounded-xl bg-[#F8FAFC]/95 backdrop-blur-sm border border-gray-200/70 shadow-sm">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 shrink-0">Active LR</span>
+              <LRTabStrip
+                linkedOrders={linkedOrders}
+                activeOrderId={activeOrderTab}
+                onChange={setActiveOrderTab}
+                maxVisible={5}
+                className="flex-1 min-w-0"
+              />
+              <div className="hidden xl:flex flex-wrap items-center gap-1.5 shrink-0">
+                {linkedOrders.map((o) => {
+                  const hasPod = podDocsForLr(flatTripPodDocs, o.order_id).length > 0;
+                  return (
+                    <span
+                      key={o.order_id}
+                      className="inline-flex items-center gap-1 rounded-md border border-gray-100 bg-white px-2 py-0.5 text-[10px] font-bold text-gray-600"
+                      title={hasPod ? 'POD on file' : 'No POD yet'}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${hasPod ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+                      {o.lr_number || 'LR'}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="bg-white rounded-3xl border border-gray-100/80 overflow-hidden shadow-xl shadow-gray-200/40">
           <div className="p-6 lg:p-8 flex flex-col md:flex-row items-center justify-between gap-10">
             <div className="flex-1 flex items-center justify-between max-w-5xl gap-12">
@@ -989,7 +1345,6 @@ export default function TripDetail() {
               <div className="text-left">
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 ml-0.5">Origin</p>
                 <h1 className="text-2xl font-bold text-[#172B4D] leading-tight break-words">{originDisplay}</h1>
-                <p className="text-[11px] font-semibold text-gray-400 mt-1">Managed via Stops tab</p>
               </div>
 
               {/* Middle Line */}
@@ -1005,7 +1360,6 @@ export default function TripDetail() {
               <div className="text-left">
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 ml-0.5">Destination</p>
                 <h1 className="text-2xl font-bold text-[#172B4D] leading-tight break-words">{destinationDisplay}</h1>
-                <p className="text-[11px] font-semibold text-gray-400 mt-1">Managed via Stops tab</p>
               </div>
             </div>
 
@@ -1036,10 +1390,14 @@ export default function TripDetail() {
                 <button
                   key={linked.order_id}
                   type="button"
-                  onClick={() => navigate(`/tenant/dashboard/orders/${linked.order_id}`)}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-xl text-[10px] font-bold text-gray-500 hover:bg-blue-50 hover:text-blue-700"
+                  onClick={() => setActiveOrderTab(linked.order_id)}
+                  className={`flex items-center gap-2 px-3 py-1.5 border rounded-xl text-[10px] font-bold transition-all ${
+                    String(activeOrderTab) === String(linked.order_id)
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-gray-50 border-gray-100 text-gray-500 hover:bg-blue-50 hover:text-blue-700'
+                  }`}
                 >
-                  <Hash size={10} className="text-gray-200" />
+                  <Hash size={10} className={String(activeOrderTab) === String(linked.order_id) ? 'text-blue-200' : 'text-gray-200'} />
                   {linked.lr_number || 'LR-PENDING'}
                 </button>
               )) : (
@@ -1134,15 +1492,15 @@ export default function TripDetail() {
                 trip={trip}
                 order={order}
                 navigate={navigate}
-                originDisplay={originDisplay}
-                destinationDisplay={destinationDisplay}
-                linkedOrders={linkedOrders}
-                stops={sortedStops}
+                lrRows={lrRows}
                 activeOrderTab={activeOrderTab}
                 setActiveOrderTab={setActiveOrderTab}
+                ordersLoading={lrOrdersLoading}
               />
             )}
             {activeTab === 'journey' && (
+              <div className="space-y-3">
+                <ScopeBadge variant="trip" />
                 <JourneyTab 
                     trip={trip} 
                     driver={getDriverDisplay(driver, driverId, trip?.primary_driver_name)} 
@@ -1151,13 +1509,17 @@ export default function TripDetail() {
                     altDriver={getDriverDisplay(altDriver, altDriverId, trip?.alternate_driver_name)}
                     altVehicle={getVehicleDisplay(altVehicle, altVehicleId, trip?.alternate_vehicle_number)}
                 />
+              </div>
             )}
-            {activeTab === 'finance' && <FinanceTab trip={trip} expenses={expenses} charges={charges} isLoadingExp={loadingExp} isLoadingChg={loadingChg} onEditFinance={handleEditFinance} onDeleteFinance={handleDeleteFinance} />}
-            {activeTab === 'cargo' && <CargoTab tripId={id} onOpenCreate={() => setIsCreateCargoOpen(true)} />}
+            {activeTab === 'finance' && <div className="space-y-3"><ScopeBadge variant="trip" /><FinanceTab trip={trip} expenses={expenses} charges={charges} isLoadingExp={loadingExp} isLoadingChg={loadingChg} onEditFinance={handleEditFinance} onDeleteFinance={handleDeleteFinance} /></div>}
+            {activeTab === 'cargo' && <div className="space-y-3"><ScopeBadge variant="trip" /><CargoTab tripId={id} onOpenCreate={() => setIsCreateCargoOpen(true)} /></div>}
             {activeTab === 'stops' && (
-              <StopsTab
+              <div className="space-y-3">
+                <ScopeBadge variant="lr" />
+                <LrScopeBanner activeOrderTab={activeOrderTab} linkedOrders={linkedOrders} stopsCount={sortedStops.length} />
+                <StopsTab
                 tripId={id}
-                stops={Array.isArray(stops) ? stops : stops?.results}
+                stops={sortedStops}
                 isLoading={loadingStops}
                 onCreateStop={(data) => createStopMutation.mutate(data)}
                 onUpdateStopStatus={(stopId, stopStatus, extraData = {}) => {
@@ -1168,16 +1530,37 @@ export default function TripDetail() {
                   if (window.confirm('Delete this stop?')) deleteStopMutation.mutate(stopId)
                 }}
               />
+              </div>
             )}
-            {activeTab === 'history' && <HistoryTab history={Array.isArray(history) ? history : history?.results} isLoading={loadingHistory} />}
+            {activeTab === 'history' && (
+              <div className="space-y-3">
+                <ScopeBadge variant="lr" />
+                <LrScopeBanner activeOrderTab={activeOrderTab} linkedOrders={linkedOrders} />
+                <HistoryTab history={scopedHistoryRows} isLoading={loadingHistory} />
+              </div>
+            )}
             {activeTab === 'deliveries' && (
-              <DeliveriesTab
+              <div className="space-y-3">
+                <ScopeBadge variant="lr" />
+                <LrScopeBanner activeOrderTab={activeOrderTab} linkedOrders={linkedOrders} />
+                <DeliveriesTab
                 tripId={id}
-                deliveries={Array.isArray(tripDeliveries) ? tripDeliveries : tripDeliveries?.results}
-                stops={sortedStops}
-                isCreating={createPODMutation.isPending}
-                createDelivery={(payload) => createPODMutation.mutate(payload)}
+                linkedOrders={linkedOrders}
+                activeOrderId={activeOrderTab}
+                onActiveOrderChange={setActiveOrderTab}
+                podDocuments={flatTripPodDocs}
+                isUploading={uploadPodMutation.isPending}
+                isUpdating={updatePodDocMutation.isPending}
+                isDeleting={deletePodDocMutation.isPending}
+                uploadPod={(formData, callbacks) => uploadPodMutation.mutate(formData, callbacks)}
+                updateDocument={(documentId, data) =>
+                  updatePodDocMutation.mutate({ documentId, data })
+                }
+                deleteDocument={(documentId) =>
+                  deletePodDocMutation.mutate(documentId)
+                }
               />
+              </div>
             )}
             {activeTab === 'docs' && (
               <div className="flex flex-col items-center justify-center py-20 text-gray-400">

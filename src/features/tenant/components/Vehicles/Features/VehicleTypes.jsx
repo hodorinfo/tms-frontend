@@ -1,10 +1,11 @@
 // Forced rebuild to resolve possible HMR/Caching issues
 import React, { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'react-hot-toast';
 import {
-  Plus, RotateCcw, Loader2, AlertCircle, X,
+  Plus, RotateCcw, Loader2, AlertCircle, X, RefreshCw,
   ChevronDown, Truck, Package, Weight,
   ToggleLeft, ToggleRight, Pencil, Trash2, Search,
-  Download, Upload
 } from 'lucide-react';
 import {
   useVehicleTypes,
@@ -14,7 +15,7 @@ import {
 } from '../../../queries/vehicles/vehicletypeQuery';
 import {
   StatCard, Badge, EmptyState, Modal, DeleteConfirm, ItemActions,
-  Label, Input, Sel, Field, Section, Textarea, VehicleSelect
+  Label, Input, Sel, Field, Section, Textarea, VehicleSelect, ConfirmModal
 } from '../Common/VehicleCommon';
 import { TableShimmer, CardShimmer, ErrorState } from '../Common/StateFeedback';
 
@@ -178,8 +179,11 @@ const VehicleTypes = () => {
   const [viewModal, setViewModal] = useState(null);
   const [deleteTarget, setDelete] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [refreshConfirm, setRefreshConfirm] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const del = useDeleteVehicleType();
+  const queryClient = useQueryClient();
 
   const { data, isLoading, isError, error, refetch } = useVehicleTypes({
     ...(catFilter && { category: catFilter }),
@@ -194,6 +198,20 @@ const VehicleTypes = () => {
   const inactive = types.filter(t => !t.is_active).length;
   const cats = [...new Set(types.map(t => t.category).filter(Boolean))].length;
 
+  const runRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await queryClient.invalidateQueries({ queryKey: ['vehicleTypes'] });
+      await refetch();
+      toast.success('List refreshed');
+    } catch {
+      toast.error('Refresh failed');
+    } finally {
+      setRefreshing(false);
+      setRefreshConfirm(false);
+    }
+  };
+
   return (
     <div className="p-6 flex flex-col gap-6 bg-[#F8FAFC] flex-1 min-h-0 overflow-hidden relative">
 
@@ -207,6 +225,17 @@ const VehicleTypes = () => {
         <DeleteConfirm label="Vehicle Type" onClose={() => setDelete(null)}
           onConfirm={() => del.mutate(deleteTarget.id, { onSuccess: () => setDelete(null) })}
           deleting={del.isPending} />
+      )}
+      {refreshConfirm && (
+        <ConfirmModal
+          title="Refresh list?"
+          message="Reload vehicle types from the server."
+          confirmLabel="Refresh"
+          icon={RefreshCw}
+          loading={refreshing}
+          onClose={() => setRefreshConfirm(false)}
+          onConfirm={runRefresh}
+        />
       )}
 
       {/* Header */}
@@ -239,19 +268,13 @@ const VehicleTypes = () => {
         <div className="flex items-center justify-end gap-2 ml-auto">
           <div className="flex items-center gap-2 mr-2">
             <button
-              onClick={() => refetch()}
-              className="flex items-center gap-2 px-3 py-2 bg-[#EBF3FF] text-[#0052CC] hover:bg-[#0052CC] hover:text-white rounded-xl transition-all duration-300 font-bold text-xs shadow-sm active:scale-95 group"
+              type="button"
+              onClick={() => setRefreshConfirm(true)}
+              disabled={refreshing}
+              className="flex items-center gap-2 px-3 py-2 bg-[#EBF3FF] text-[#0052CC] hover:bg-[#0052CC] hover:text-white rounded-xl transition-all duration-300 font-bold text-xs shadow-sm active:scale-95 disabled:opacity-50 group"
             >
-              <RotateCcw size={14} className={isLoading ? "animate-spin" : "group-hover:rotate-180 transition-transform duration-500"} />
-              <span>Refresh</span>
-            </button>
-            <button className="flex items-center gap-2 px-3 py-2 bg-[#EBF3FF] text-[#0052CC] hover:bg-[#0052CC] hover:text-white rounded-xl transition-all duration-300 font-bold text-xs shadow-sm active:scale-95">
-              <Download size={14} />
-              <span>Export</span>
-            </button>
-            <button className="flex items-center gap-2 px-3 py-2 bg-[#EBF3FF] text-[#0052CC] hover:bg-[#0052CC] hover:text-white rounded-xl transition-all duration-300 font-bold text-xs shadow-sm active:scale-95">
-              <Upload size={14} />
-              <span>Import</span>
+              <RefreshCw size={14} className={refreshing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'} />
+              <span>{refreshing ? 'Refreshing…' : 'Refresh'}</span>
             </button>
           </div>
           <div className="w-px h-8 bg-gray-200 mx-1" />

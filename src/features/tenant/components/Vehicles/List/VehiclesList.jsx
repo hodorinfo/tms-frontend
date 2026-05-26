@@ -1,13 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
-  Search, Plus, Download, RefreshCw, Eye, PauseCircle,
+  Search, Plus, Download, Upload, RefreshCw, Eye, PauseCircle,
   PlayCircle, Truck,
   ChevronDown, Loader2, RotateCcw,
-  Pencil, LayoutGrid
+  Pencil, LayoutGrid, FileSpreadsheet
 } from 'lucide-react';
 import { useVehicles, useVehicle, useUpdateVehicle, useRestoreVehicle, useVehicleStats } from '../../../queries/vehicles/vehicleQuery';
-import { useVehicleTypes } from '../../../queries/vehicles/vehicletypeQuery';
+import { vehiclesApi } from '../../../api/vehicles/vehicleEndpoint';
+import { downloadBlob, filenameFromContentDisposition } from '../../../../../utils/csvExport';
+import { toast } from 'react-hot-toast';
 
 import {
   VehicleFormModal
@@ -40,6 +43,33 @@ const EditVehicleButton = ({ vehicleId, onEdit }) => {
   );
 };
 
+const ACTION_CONFIRM = {
+  refresh: {
+    title: 'Refresh list?',
+    message: 'Reload vehicles and summary counts from the server.',
+    confirmLabel: 'Refresh',
+    icon: RefreshCw,
+  },
+  template: {
+    title: 'Download template?',
+    message: 'Get the CSV file with required column headers.',
+    confirmLabel: 'Download',
+    icon: FileSpreadsheet,
+  },
+  import: {
+    title: 'Import vehicles?',
+    message: 'Upload a CSV file. Rows match by vehicle registration number.',
+    confirmLabel: 'Choose file',
+    icon: Upload,
+  },
+  export: {
+    title: 'Export vehicles?',
+    message: 'Download a CSV using your current filters.',
+    confirmLabel: 'Export',
+    icon: Download,
+  },
+};
+
 // ── Main Component ────────────────────────────────────────────────────
 const Vehicles = () => {
   const PAGE_SIZE = 10;
@@ -53,7 +83,22 @@ const Vehicles = () => {
   const [formModal, setFormModal] = useState(null);
   const [viewModal, setViewModal] = useState(null);
   const [suspendConfirm, setSuspendConfirm] = useState(null);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [actionConfirm, setActionConfirm] = useState(null);
+  const fileInputRef = useRef(null);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  const listFilterParams = {
+    ...(visibilityFilter !== 'deleted' && statusFilter && { status: statusFilter }),
+    ...(visibilityFilter !== 'deleted' && fuelFilter && { fuel_type: fuelFilter }),
+    ...(visibilityFilter !== 'deleted' && ownerFilter && { ownership_type: ownerFilter }),
+    ...(debouncedSearch && { search: debouncedSearch }),
+    ...(visibilityFilter === 'deleted' && { deleted_only: true }),
+    ...(visibilityFilter === 'all' && { include_deleted: true }),
+  };
 
   // Search Debouncing
   useEffect(() => {
@@ -68,17 +113,12 @@ const Vehicles = () => {
   const { data, isLoading, isError, error, refetch } = useVehicles({
     page: currentPage,
     page_size: PAGE_SIZE,
-    ...(visibilityFilter !== 'deleted' && statusFilter && { status: statusFilter }),
-    ...(visibilityFilter !== 'deleted' && fuelFilter && { fuel_type: fuelFilter }),
-    ...(visibilityFilter !== 'deleted' && ownerFilter && { ownership_type: ownerFilter }),
-    ...(debouncedSearch && { search: debouncedSearch }),
-    ...(visibilityFilter === 'deleted' && { deleted_only: true }),
-    ...(visibilityFilter === 'all' && { include_deleted: true }),
+    ...listFilterParams,
   });
 
   const updateVehicle = useUpdateVehicle();
   const restoreVehicle = useRestoreVehicle();
-  const { data: statsData } = useVehicleStats();
+  const { data: statsData, refetch: refetchStats } = useVehicleStats();
   const vehicles = data?.results ?? data ?? [];
   const filteredTotal = data?.count ?? vehicles.length;
   const total = statsData?.total ?? data?.count ?? vehicles.length;
@@ -102,6 +142,96 @@ const Vehicles = () => {
       { id: suspendConfirm.id, data: { status: 'MAINTENANCE' } },
       { onSuccess: () => setSuspendConfirm(null) }
     );
+  };
+
+  const invalidateVehicleQueries = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+    await queryClient.invalidateQueries({ queryKey: ['vehicle-stats'] });
+  };
+
+  const runRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await invalidateVehicleQueries();
+      await Promise.all([refetch(), refetchStats()]);
+      toast.success('List refreshed');
+    } catch {
+      toast.error('Refresh failed');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleActionConfirm = async () => {
+    const kind = actionConfirm?.kind;
+    setActionConfirm(null);
+    if (kind === 'refresh') await runRefresh();
+    else if (kind === 'template') await handleDownloadTemplate();
+    else if (kind === 'import') fileInputRef.current?.click();
+    else if (kind === 'export') await handleExport();
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const response = await vehiclesApi.importTemplate();
+      const blob = response.data instanceof Blob
+        ? response.data
+        : new Blob([response.data], { type: 'text/csv;charset=utf-8;' });
+      downloadBlob(blob, 'vehicles_import_template.csv');
+      toast.success('Template downloaded');
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || err?.message || 'Failed to download template');
+    }
+  };
+
+  const handleImportFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      toast.error('Please select a .csv file');
+      return;
+    }
+    setImporting(true);
+    try {
+      const result = await vehiclesApi.importCsv(file);
+      const { created = 0, updated = 0, failed = 0, errors = [] } = result || {};
+      if (failed > 0 && errors.length) {
+        toast.error(`Import finished: ${created} created, ${updated} updated, ${failed} failed. ${errors[0]}`);
+      } else {
+        toast.success(`Import complete: ${created} created, ${updated} updated`);
+      }
+      await invalidateVehicleQueries();
+    } catch (err) {
+      const detail = err?.response?.data?.detail || err?.response?.data?.errors?.[0];
+      toast.error(detail || err?.message || 'Import failed');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const response = await vehiclesApi.exportCsv(listFilterParams);
+      const blob = response.data instanceof Blob
+        ? response.data
+        : new Blob([response.data], { type: 'text/csv;charset=utf-8;' });
+      const fallback = `vehicles_export_${new Date().toISOString().split('T')[0]}.csv`;
+      const filename = filenameFromContentDisposition(
+        response.headers?.['content-disposition'],
+        fallback
+      );
+      downloadBlob(blob, filename);
+      toast.success('Vehicle list exported');
+    } catch (err) {
+      const message = err?.response?.data instanceof Blob
+        ? 'Export failed'
+        : (err?.response?.data?.detail || err?.message || 'Export failed');
+      toast.error(message);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const resetFilters = () => {
@@ -270,6 +400,18 @@ const Vehicles = () => {
         />
       )}
 
+      {actionConfirm && (
+        <ConfirmModal
+          title={ACTION_CONFIRM[actionConfirm.kind].title}
+          message={ACTION_CONFIRM[actionConfirm.kind].message}
+          confirmLabel={ACTION_CONFIRM[actionConfirm.kind].confirmLabel}
+          icon={ACTION_CONFIRM[actionConfirm.kind].icon}
+          loading={refreshing || exporting || importing}
+          onClose={() => setActionConfirm(null)}
+          onConfirm={handleActionConfirm}
+        />
+      )}
+
       {/* Page Title & Search Section */}
       <div className="flex items-center">
         <div className="w-1/4">
@@ -310,17 +452,48 @@ const Vehicles = () => {
               <LayoutGrid size={14} /> Types
             </button>
             <button
-              onClick={() => refetch()}
-              className="flex items-center gap-2 px-3 py-2 bg-[#EBF3FF] text-[#0052CC] hover:bg-[#0052CC] hover:text-white rounded-xl transition-all duration-300 font-bold text-xs shadow-sm active:scale-95 group"
+              type="button"
+              onClick={() => setActionConfirm({ kind: 'refresh' })}
+              disabled={refreshing || importing || exporting}
+              className="flex items-center gap-2 px-3 py-2 bg-[#EBF3FF] text-[#0052CC] hover:bg-[#0052CC] hover:text-white rounded-xl transition-all duration-300 font-bold text-xs shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed group"
             >
-              <RefreshCw size={14} className="group-hover:rotate-180 transition-transform duration-500" />
-              <span>Refresh</span>
+              <RefreshCw size={14} className={`${refreshing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} />
+              <span>{refreshing ? 'Refreshing…' : 'Refresh'}</span>
             </button>
             <button
-              className="flex items-center gap-2 px-3 py-2 bg-[#EBF3FF] text-[#0052CC] hover:bg-[#0052CC] hover:text-white rounded-xl transition-all duration-300 font-bold text-xs shadow-sm active:scale-95"
+              type="button"
+              onClick={() => setActionConfirm({ kind: 'template' })}
+              disabled={importing || exporting || refreshing}
+              title="Download CSV import template"
+              className="flex items-center gap-2 px-3 py-2 bg-[#EBF3FF] text-[#0052CC] hover:bg-[#0052CC] hover:text-white rounded-xl transition-all duration-300 font-bold text-xs shadow-sm active:scale-95 disabled:opacity-50"
             >
-              <Download size={14} />
-              <span>Export</span>
+              <FileSpreadsheet size={14} />
+              <span>Template</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActionConfirm({ kind: 'import' })}
+              disabled={importing || isLoading || refreshing}
+              className="flex items-center gap-2 px-3 py-2 bg-[#EBF3FF] text-[#0052CC] hover:bg-[#0052CC] hover:text-white rounded-xl transition-all duration-300 font-bold text-xs shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+              <span>{importing ? 'Importing…' : 'Import'}</span>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={handleImportFile}
+            />
+            <button
+              type="button"
+              onClick={() => setActionConfirm({ kind: 'export' })}
+              disabled={exporting || isLoading || importing || refreshing}
+              className="flex items-center gap-2 px-3 py-2 bg-[#EBF3FF] text-[#0052CC] hover:bg-[#0052CC] hover:text-white rounded-xl transition-all duration-300 font-bold text-xs shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              <span>{exporting ? 'Exporting…' : 'Export'}</span>
             </button>
           </div>
           <div className="w-px h-8 bg-gray-200 mx-1" />

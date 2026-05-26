@@ -1,12 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'react-hot-toast';
 import {
   Search, Plus, Download, Upload, RefreshCw, RotateCcw, Eye, EyeOff,
   ChevronDown, Loader2, AlertCircle,
   IdCard, ArrowUpDown, ArrowUp, ArrowDown,
-  X, User, Car,
+  X, User, Car, FileSpreadsheet,
 } from 'lucide-react';
+import driverApi from '../../api/drivers/driverEndpoint';
+import { downloadBlob } from '../../../../utils/csvExport';
 import { useDrivers, useRegisterDriver, useRestoreDriver, useDriverStats } from '../../queries/drivers/driverCoreQuery';
+import { ConfirmModal } from '../Vehicles/Common/VehicleCommon';
 
 import Label from './common/Label';
 import Input from './common/Input';
@@ -216,6 +221,33 @@ const AddDriverModal = ({ onClose }) => {
 // ── ADD DRIVER MODAL END ──────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────
 
+const ACTION_CONFIRM = {
+  refresh: {
+    title: 'Refresh list?',
+    message: 'Reload drivers and summary counts from the server.',
+    confirmLabel: 'Refresh',
+    icon: RefreshCw,
+  },
+  template: {
+    title: 'Download template?',
+    message: 'Get the CSV file with required column headers.',
+    confirmLabel: 'Download',
+    icon: FileSpreadsheet,
+  },
+  import: {
+    title: 'Import drivers?',
+    message: 'Upload a CSV file. Rows match by Employee ID, License No., or Email.',
+    confirmLabel: 'Choose file',
+    icon: Upload,
+  },
+  export: {
+    title: 'Export drivers?',
+    message: 'Download a CSV using your current filters.',
+    confirmLabel: 'Export',
+    icon: Download,
+  },
+};
+
 // ── Main Component ────────────────────────────────────────────────────
 const DriversList = () => {
   const PAGE_SIZE = 10;
@@ -229,8 +261,14 @@ const DriversList = () => {
   const [ordering, setOrdering] = useState('-id');
   const [visibilityFilter, setVisibilityFilter] = useState('active'); // active | deleted | all
   const [currentPage, setCurrentPage] = useState(1);
-  const [addOpen, setAddOpen] = useState(false);  // ← Add Driver modal
+  const [addOpen, setAddOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [actionConfirm, setActionConfirm] = useState(null);
+  const fileInputRef = useRef(null);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   // Search Debouncing
   React.useEffect(() => {
@@ -241,7 +279,7 @@ const DriversList = () => {
     return () => clearTimeout(handler);
   }, [search]);
 
-  const { data, isLoading, isError, error, refetch } = useDrivers({
+  const listFilterParams = {
     page: currentPage,
     page_size: PAGE_SIZE,
     ...(visibilityFilter !== 'deleted' && statusFilter && { status: statusFilter }),
@@ -253,8 +291,10 @@ const DriversList = () => {
     ...(ordering && { ordering }),
     ...(visibilityFilter === 'deleted' && { deleted_only: true }),
     ...(visibilityFilter === 'all' && { include_deleted: true }),
-  });
-  const { data: statsData } = useDriverStats();
+  };
+
+  const { data, isLoading, isError, error, refetch } = useDrivers(listFilterParams);
+  const { data: statsData, refetch: refetchStats } = useDriverStats();
   const restoreDriver = useRestoreDriver();
 
   const drivers = data?.results ?? [];
@@ -274,6 +314,89 @@ const DriversList = () => {
   const resetFilters = () => {
     setSearch(''); setStatus(''); setType(''); setLic('');
     setJoinedFrom(''); setJoinedTo(''); setOrdering(''); setVisibilityFilter('active'); setCurrentPage(1);
+  };
+
+  const invalidateDriverQueries = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['drivers'] });
+  };
+
+  const runRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await invalidateDriverQueries();
+      await Promise.all([refetch(), refetchStats()]);
+      toast.success('List refreshed');
+    } catch {
+      toast.error('Refresh failed');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const response = await driverApi.importTemplate();
+      const blob = response.data instanceof Blob
+        ? response.data
+        : new Blob([response.data], { type: 'text/csv;charset=utf-8;' });
+      downloadBlob(blob, 'drivers_import_template.csv');
+      toast.success('Template downloaded');
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || err?.message || 'Failed to download template');
+    }
+  };
+
+  const handleImportFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      toast.error('Please select a .csv file');
+      return;
+    }
+    setImporting(true);
+    try {
+      const result = await driverApi.importCsv(file);
+      const { created = 0, updated = 0, failed = 0, errors = [] } = result || {};
+      if (failed > 0 && errors.length) {
+        toast.error(`Import finished: ${created} created, ${updated} updated, ${failed} failed. ${errors[0]}`);
+      } else {
+        toast.success(`Import complete: ${created} created, ${updated} updated`);
+      }
+      await invalidateDriverQueries();
+    } catch (err) {
+      const detail = err?.response?.data?.detail || err?.response?.data?.errors?.[0];
+      toast.error(detail || err?.message || 'Import failed');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const { page, page_size, ordering, ...exportParams } = listFilterParams;
+      const response = await driverApi.exportCsv(exportParams);
+      const blob = response.data instanceof Blob
+        ? response.data
+        : new Blob([response.data], { type: 'text/csv;charset=utf-8;' });
+      const fallback = `drivers_export_${new Date().toISOString().split('T')[0]}.csv`;
+      downloadBlob(blob, fallback);
+      toast.success('Driver list exported');
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || err?.message || 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleActionConfirm = async () => {
+    const kind = actionConfirm?.kind;
+    setActionConfirm(null);
+    if (kind === 'refresh') await runRefresh();
+    else if (kind === 'template') await handleDownloadTemplate();
+    else if (kind === 'import') fileInputRef.current?.click();
+    else if (kind === 'export') await handleExport();
   };
 
   // If filters change and current page becomes empty, move back one page.
@@ -429,6 +552,18 @@ const DriversList = () => {
         <AddDriverModal onClose={() => setAddOpen(false)} />
       )}
 
+      {actionConfirm && (
+        <ConfirmModal
+          title={ACTION_CONFIRM[actionConfirm.kind].title}
+          message={ACTION_CONFIRM[actionConfirm.kind].message}
+          confirmLabel={ACTION_CONFIRM[actionConfirm.kind].confirmLabel}
+          icon={ACTION_CONFIRM[actionConfirm.kind].icon}
+          loading={refreshing || exporting || importing}
+          onClose={() => setActionConfirm(null)}
+          onConfirm={handleActionConfirm}
+        />
+      )}
+
       {/* ── Header ── */}
       <div className="flex items-center">
         {/* Title Block */}
@@ -466,27 +601,51 @@ const DriversList = () => {
         <div className="flex items-center justify-end gap-2 ml-auto">
           <div className="flex items-center gap-2 mr-2">
             <button
+              type="button"
               title="Refresh Data"
-              onClick={() => refetch()}
-              className="flex items-center gap-2 px-3 py-2 bg-[#EBF3FF] text-[#0052CC] hover:bg-[#0052CC] hover:text-white rounded-xl transition-all duration-300 font-bold text-xs shadow-sm active:scale-95 group"
+              onClick={() => setActionConfirm({ kind: 'refresh' })}
+              disabled={refreshing || importing || exporting}
+              className="flex items-center gap-2 px-3 py-2 bg-[#EBF3FF] text-[#0052CC] hover:bg-[#0052CC] hover:text-white rounded-xl transition-all duration-300 font-bold text-xs shadow-sm active:scale-95 disabled:opacity-50 group"
             >
-              <RefreshCw size={14} className={isLoading ? "animate-spin" : "group-hover:rotate-180 transition-transform duration-500"} />
-              <span>Refresh</span>
+              <RefreshCw size={14} className={refreshing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'} />
+              <span>{refreshing ? 'Refreshing…' : 'Refresh'}</span>
             </button>
-            {/* Added Upload Icon to lucide imports at the top if needed */}
             <button
+              type="button"
+              title="Download CSV import template"
+              onClick={() => setActionConfirm({ kind: 'template' })}
+              disabled={refreshing || importing || exporting}
+              className="flex items-center gap-2 px-3 py-2 bg-[#EBF3FF] text-[#0052CC] hover:bg-[#0052CC] hover:text-white rounded-xl transition-all duration-300 font-bold text-xs shadow-sm active:scale-95 disabled:opacity-50"
+            >
+              <FileSpreadsheet size={14} />
+              <span>Template</span>
+            </button>
+            <button
+              type="button"
               title="Import Drivers"
-              className="flex items-center gap-2 px-3 py-2 bg-[#EBF3FF] text-[#0052CC] hover:bg-[#0052CC] hover:text-white rounded-xl transition-all duration-300 font-bold text-xs shadow-sm active:scale-95 group"
+              onClick={() => setActionConfirm({ kind: 'import' })}
+              disabled={importing || isLoading || refreshing}
+              className="flex items-center gap-2 px-3 py-2 bg-[#EBF3FF] text-[#0052CC] hover:bg-[#0052CC] hover:text-white rounded-xl transition-all duration-300 font-bold text-xs shadow-sm active:scale-95 disabled:opacity-50"
             >
-              <Upload size={14} />
-              <span>Import</span>
+              {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+              <span>{importing ? 'Importing…' : 'Import'}</span>
             </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={handleImportFile}
+            />
             <button
+              type="button"
               title="Export Drivers"
-              className="flex items-center gap-2 px-3 py-2 bg-[#EBF3FF] text-[#0052CC] hover:bg-[#0052CC] hover:text-white rounded-xl transition-all duration-300 font-bold text-xs shadow-sm active:scale-95"
+              onClick={() => setActionConfirm({ kind: 'export' })}
+              disabled={exporting || isLoading || importing || refreshing}
+              className="flex items-center gap-2 px-3 py-2 bg-[#EBF3FF] text-[#0052CC] hover:bg-[#0052CC] hover:text-white rounded-xl transition-all duration-300 font-bold text-xs shadow-sm active:scale-95 disabled:opacity-50"
             >
-              <Download size={14} />
-              <span>Export</span>
+              {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              <span>{exporting ? 'Exporting…' : 'Export'}</span>
             </button>
           </div>
         </div>

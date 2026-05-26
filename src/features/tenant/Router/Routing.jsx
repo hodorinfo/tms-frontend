@@ -34,8 +34,6 @@ import CreateTripPage from '../components/orders/CreateTripPage';
 
 import CargoDashboard from '../components/orders/Cargo';
 import CargoDetail from '../components/orders/CargoDetail';
-import DeliveriesDashboard from '../components/orders/Deliveries';
-import DeliveryDetail from '../components/orders/DeliveryDetail';
 import ErrorBoundary from '../components/orders/ErrorBoundary';
 
 // Global Driver Views
@@ -149,8 +147,8 @@ const Routing = () => {
         <Route path="orders/cargo" element={<ErrorBoundary><CargoDashboard /></ErrorBoundary>} />
         <Route path="orders/cargo/:id" element={<ErrorBoundary><CargoDetail /></ErrorBoundary>} />
 
-        <Route path="orders/deliveries" element={<ErrorBoundary><DeliveriesDashboard /></ErrorBoundary>} />
-        <Route path="orders/deliveries/:id" element={<ErrorBoundary><DeliveryDetail /></ErrorBoundary>} />
+        <Route path="orders/deliveries" element={<Navigate to="/tenant/dashboard/orders/trips" replace />} />
+        <Route path="orders/deliveries/:id" element={<Navigate to="/tenant/dashboard/orders/trips" replace />} />
 
         <Route path="orders/:id" element={<ErrorBoundary><OrderDetail /></ErrorBoundary>} />
         <Route path="orders/:id/trips" element={<ErrorBoundary><TripNestedSubResource /></ErrorBoundary>} />

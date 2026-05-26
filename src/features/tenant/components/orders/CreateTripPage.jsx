@@ -9,6 +9,8 @@ import { useDrivers } from '../../queries/drivers/driverCoreQuery';
 import { useVehicles } from '../../queries/vehicles/vehicleQuery';
 import { useVehicleTypes } from '../../queries/vehicles/vehicletypeQuery';
 import { tripsApi } from '../../api/orders/ordersEndpoint';
+import LRTabStrip from './trip/LRTabStrip';
+import ScopeBadge from './trip/ScopeBadge';
 
 // --- Reusable UI Components (matching previous standardization) ---
 const formatLabel = (str) => {
@@ -615,6 +617,7 @@ export default function CreateTripPage() {
                   <div className="flex items-center gap-3 mb-8 border-b border-gray-50 pb-4">
                     <div className="p-2 bg-blue-50 text-[#4a6cf7] rounded-lg"><FileText size={20} /></div>
                     <h2 className="text-lg font-bold text-gray-800 tracking-tight">General Information</h2>
+                    <ScopeBadge variant="lr" />
                   </div>
                   <div className="grid grid-cols-1 gap-8">
                     <FieldGroup label="orders">
@@ -640,6 +643,27 @@ export default function CreateTripPage() {
                       </div>
                     </FieldGroup>
                   </div>
+                  {(formData.order_ids || []).length > 0 && (
+                    <div className="rounded-xl border border-gray-100 p-3 bg-gray-50/40">
+                      <LRTabStrip
+                        linkedOrders={selectedOrders.map((o) => ({ order_id: o.id, lr_number: o.lr_number }))}
+                        activeOrderId={activeRouteOrderId}
+                        onChange={setActiveRouteOrderId}
+                      />
+                      {selectedOrders.find((o) => String(o.id) === String(activeRouteOrderId)) && (
+                        <div className="grid grid-cols-2 gap-3 mt-3 text-xs">
+                          <div className="rounded-lg border border-amber-100 bg-amber-50 p-2">
+                            <p className="font-black text-amber-800 uppercase tracking-wider">Consignor</p>
+                            <p className="text-gray-700 mt-1">{selectedOrders.find((o) => String(o.id) === String(activeRouteOrderId))?.consignor_address || '—'}</p>
+                          </div>
+                          <div className="rounded-lg border border-amber-100 bg-amber-50 p-2">
+                            <p className="font-black text-amber-800 uppercase tracking-wider">Consignee</p>
+                            <p className="text-gray-700 mt-1">{selectedOrders.find((o) => String(o.id) === String(activeRouteOrderId))?.consignee_address || '—'}</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className="grid grid-cols-3 gap-8">
                     <FieldGroup label="lr_number">
                       <input
@@ -689,7 +713,9 @@ export default function CreateTripPage() {
                   <div className="flex items-center gap-3 mb-8 border-b border-gray-50 pb-4">
                     <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><Truck size={20} /></div>
                     <h2 className="text-lg font-bold text-gray-800 tracking-tight">Fleet & Team Allocation</h2>
+                    <ScopeBadge variant="trip" />
                   </div>
+                  <p className="text-xs font-bold text-violet-700 bg-violet-50 border border-violet-100 rounded-lg px-3 py-2 inline-block">Applies to all linked LRs</p>
                   <div className="grid grid-cols-2 gap-8">
                     <FieldGroup label="primary_vehicle_id">
                       <select name="primary_vehicle_id" className={inputClass} value={formData.primary_vehicle_id || ""} onChange={handleInputChange}>
@@ -774,23 +800,15 @@ export default function CreateTripPage() {
                   <div className="flex items-center gap-3 mb-8 border-b border-gray-50 pb-4">
                     <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg"><MapPin size={20} /></div>
                     <h2 className="text-lg font-bold text-gray-800 tracking-tight">Route & Schedule</h2>
+                    <ScopeBadge variant="lr" />
                   </div>
                   {(formData.order_ids || []).length > 0 && (
-                    <div className="mb-2 flex flex-wrap gap-2">
-                      {selectedOrders.map((order) => (
-                        <button
-                          key={order.id}
-                          type="button"
-                          onClick={() => setActiveRouteOrderId(order.id)}
-                          className={`px-3 py-1 rounded-lg text-[11px] font-bold border ${
-                            String(activeRouteOrderId) === String(order.id)
-                              ? 'bg-blue-600 text-white border-blue-600'
-                              : 'bg-white text-gray-600 border-gray-200'
-                          }`}
-                        >
-                          {order.lr_number}
-                        </button>
-                      ))}
+                    <div className="mb-2">
+                      <LRTabStrip
+                        linkedOrders={selectedOrders.map((o) => ({ order_id: o.id, lr_number: o.lr_number }))}
+                        activeOrderId={activeRouteOrderId}
+                        onChange={setActiveRouteOrderId}
+                      />
                     </div>
                   )}
                   <div className="bg-gray-50/50 rounded-2xl p-6 border border-gray-100 flex gap-6 relative overflow-hidden group mb-8">
@@ -958,6 +976,7 @@ export default function CreateTripPage() {
                       <h2 className="text-xl font-black text-[#172B4D] tracking-tight">Metrics & Performance</h2>
                       <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Journey efficiency & operational data</p>
                     </div>
+                    <ScopeBadge variant="trip" />
                   </div>
                   
                   <div className="max-w-4xl">
@@ -1005,6 +1024,7 @@ export default function CreateTripPage() {
                       <h2 className="text-xl font-black text-[#172B4D] tracking-tight">Financials & Audits</h2>
                       <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Billing & settlement details</p>
                     </div>
+                    <ScopeBadge variant="trip" />
                   </div>
                   
                   <div className="max-w-4xl">
@@ -1080,6 +1100,7 @@ export default function CreateTripPage() {
                   <div className="flex items-center gap-3 mb-8 border-b border-gray-50 pb-4">
                     <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Package size={20} /></div>
                     <h2 className="text-lg font-bold text-gray-800 tracking-tight">Cargo Planning</h2>
+                    <ScopeBadge variant="trip" />
                   </div>
                   <div className="bg-gray-50 p-6 rounded-2xl border border-dashed border-gray-200 space-y-3">
                     <p className="text-sm font-semibold text-[#172B4D]">
@@ -1105,6 +1126,21 @@ export default function CreateTripPage() {
                       <div className="flex flex-col"><span className="text-gray-400 text-xs font-bold uppercase">Route</span><span className="font-bold text-gray-700">{primaryRoutePreview.origin_address && primaryRoutePreview.destination_address ? `${primaryRoutePreview.origin_address} → ${primaryRoutePreview.destination_address}` : 'Not fully specified'}</span></div>
                       <div className="flex flex-col"><span className="text-gray-400 text-xs font-bold uppercase">trip_type</span><span className="font-bold text-gray-700">{formData.trip_type}</span></div>
                       <div className="flex flex-col"><span className="text-gray-400 text-xs font-bold uppercase">status</span><span className="font-bold text-blue-600">{formData.status}</span></div>
+                    </div>
+                  </div>
+                  <div className="bg-white border border-gray-100 rounded-xl p-4">
+                    <h4 className="text-xs font-black uppercase tracking-widest text-gray-500 mb-3">LR-wise Summary</h4>
+                    <div className="space-y-2">
+                      {selectedOrders.map((o) => {
+                        const route = routesByOrder[o.id] || buildRouteState(o.id);
+                        return (
+                          <details key={o.id} className="rounded-lg border border-gray-100 bg-gray-50/40 px-3 py-2">
+                            <summary className="cursor-pointer text-xs font-bold text-[#172B4D]">{o.lr_number}</summary>
+                            <p className="text-xs text-gray-600 mt-2">{route.origin_address || '—'} {'->'} {route.destination_address || '—'}</p>
+                            <p className="text-xs text-gray-500 mt-1">Stops: {(route.stops || []).filter((s) => (s.location_address || '').trim()).length}</p>
+                          </details>
+                        );
+                      })}
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-6">

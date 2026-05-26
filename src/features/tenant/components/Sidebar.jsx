@@ -4,7 +4,7 @@ import {
   Wrench, Search, Fuel, Settings, Plug, Tag, ScrollText,
   ChevronDown, ChevronsRight, ChevronsLeft, UserCheck, Phone, GraduationCap,
   HeartPulse, BarChart2, AlertTriangle, CalendarClock, Car, Banknote, UserPlus, UserMinus, Briefcase, Building2,
-  Package, MapPinned, ClipboardCheck, GitMerge,
+  Package, MapPinned, GitMerge,
 } from 'lucide-react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 
@@ -51,12 +51,11 @@ const customerSubItems = [
 ];
 
 const ORDERS_ROOT = '/tenant/dashboard/orders';
-const ORDER_MODULE_RESERVED = new Set(['trips', 'cargo', 'deliveries', 'lr-records']);
+const ORDER_MODULE_RESERVED = new Set(['trips', 'cargo', 'lr-records']);
 const orderSubItems = [
   { name: 'LR Bookings', icon: <FileText size={13} />, path: '/tenant/dashboard/orders', badge: null },
   { name: 'Trips', icon: <MapPinned size={13} />, path: '/tenant/dashboard/orders/trips', badge: null },
   { name: 'Cargo', icon: <Package size={13} />, path: '/tenant/dashboard/orders/cargo', badge: null },
-  { name: 'Deliveries', icon: <ClipboardCheck size={13} />, path: '/tenant/dashboard/orders/deliveries', badge: null },
   { name: 'LR Records', icon: <FileText size={13} />, path: '/tenant/dashboard/orders/lr-records', badge: null },
 ];
 
@@ -184,7 +183,6 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
   const ordersNavActive = isOrdersNavActive(location.pathname);
   const isTripsPath = location.pathname.startsWith(`${ORDERS_ROOT}/trips`);
   const isCargoPath = location.pathname.startsWith(`${ORDERS_ROOT}/cargo`);
-  const isDeliveriesPath = location.pathname.startsWith(`${ORDERS_ROOT}/deliveries`);
   const isOrderPath = location.pathname.startsWith(ORDERS_ROOT);
 
   const [vehiclesOpen, setVehiclesOpen] = useState(isVehiclePath);
@@ -276,17 +274,6 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
                 setIsCollapsed={setIsCollapsed}
               />
               <NavItem
-                icon={<Banknote />}
-                label="Finance"
-                isOpen={financeOpen}
-                setIsOpen={setFinanceOpen}
-                isActive={isFinancePath}
-                subItems={financeSubItems}
-                title="Finance Operations"
-                isCollapsed={isCollapsed}
-                setIsCollapsed={setIsCollapsed}
-              />
-              <NavItem
                 icon={<FileText />}
                 label="LR Operations"
                 isOpen={ordersOpen}
@@ -294,6 +281,17 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
                 isActive={ordersNavActive}
                 subItems={orderSubItems}
                 title="LR & Trip Operations"
+                isCollapsed={isCollapsed}
+                setIsCollapsed={setIsCollapsed}
+              />
+              <NavItem
+                icon={<Banknote />}
+                label="Finance"
+                isOpen={financeOpen}
+                setIsOpen={setFinanceOpen}
+                isActive={isFinancePath}
+                subItems={financeSubItems}
+                title="Finance Operations"
                 isCollapsed={isCollapsed}
                 setIsCollapsed={setIsCollapsed}
               />

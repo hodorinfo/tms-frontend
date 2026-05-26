@@ -38,6 +38,25 @@ const driverApi = {
   restoreDriver: (id) =>
     axiosInstance.post(`${BASE}/drivers/${id}/restore/`),
 
+  exportCsv: (params) =>
+    axiosInstance.get(`${BASE}/drivers/export/`, {
+      params,
+      responseType: 'blob',
+    }),
+
+  importTemplate: () =>
+    axiosInstance.get(`${BASE}/drivers/import-template/`, {
+      responseType: 'blob',
+    }),
+
+  importCsv: (file) => {
+    const form = new FormData();
+    form.append('file', file);
+    return axiosInstance.post(`${BASE}/drivers/import/`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then((r) => r.data);
+  },
+
 
   // ─── 2. Documents ────────────────────────────────
 

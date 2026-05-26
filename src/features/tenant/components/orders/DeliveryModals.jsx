@@ -61,181 +61,125 @@ const Modal = ({ isOpen, onClose, title, children }) => {
 
 export function CreatePODModal({ isOpen, onClose }) {
   const createPODMutation = useCreatePOD();
-  const { data: tripsData } = useTrips({ ordering: '-updated_at', page_size: 200, status_in: 'DELIVERED,COMPLETED' });
+  const { data: tripsData } = useTrips({ ordering: '-updated_at', page_size: 200 });
   const [selectedTripId, setSelectedTripId] = useState('');
-  const doneTrips = tripsData?.results || [];
-  const { data: tripStopsData } = useTripStops(selectedTripId);
-  const deliveryStops = (tripStopsData || []).filter((s) => s.stop_type === 'DELIVERY');
+  const [podFile, setPodFile] = useState(null);
+  const trips = tripsData?.results || [];
+  const { data: tripDetail } = useTripDetail(selectedTripId);
+  const linkedOrders = tripDetail?.linked_orders || [];
 
   const [formData, setFormData] = useState({
-    trip_stop: "",
-    delivery_date: new Date().toISOString().slice(0, 16),
-    received_by_name: "",
-    received_by_relation: "",
-    delivery_status: "DELIVERED",
-    remarks: "",
-    damage_notes: "",
-    shortage_notes: "",
-    pod_number: "",
-    signature_url: "",
-    delivery_latitude: "",
-    delivery_longitude: "",
-    location_accuracy_meters: ""
+    order_id: '',
+    received_by_name: '',
+    delivery_status: 'DELIVERED',
+    remarks: '',
+    damage_notes: '',
   });
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!formData.trip_stop) return;
-    const payload = { ...formData };
-    if (payload.delivery_date) {
-      payload.delivery_date = new Date(payload.delivery_date).toISOString();
-    }
-    if (payload.delivery_latitude) payload.delivery_latitude = parseFloat(payload.delivery_latitude);
-    if (payload.delivery_longitude) payload.delivery_longitude = parseFloat(payload.delivery_longitude);
-    if (payload.location_accuracy_meters) payload.location_accuracy_meters = parseFloat(payload.location_accuracy_meters);
-
-    Object.keys(payload).forEach(key => {
-      if (payload[key] === "" || payload[key] === null) {
-        delete payload[key];
+    if (!selectedTripId || !podFile) return;
+    createPODMutation.mutate(
+      {
+        trip_id: selectedTripId,
+        file: podFile,
+        order_id: formData.order_id || undefined,
+        received_by_name: formData.received_by_name,
+        delivery_status: formData.delivery_status,
+        remarks: formData.remarks,
+        damage_notes: formData.damage_notes,
+      },
+      {
+        onSuccess: () => {
+          setSelectedTripId('');
+          setPodFile(null);
+          setFormData({ order_id: '', received_by_name: '', delivery_status: 'DELIVERED', remarks: '', damage_notes: '' });
+          onClose();
+        },
       }
-    });
-
-    createPODMutation.mutate(payload, {
-      onSuccess: () => {
-        setSelectedTripId("");
-        setFormData({
-          trip_stop: "", delivery_date: new Date().toISOString().slice(0, 16),
-          received_by_name: "", received_by_relation: "", delivery_status: "DELIVERED",
-          remarks: "", damage_notes: "", shortage_notes: "", pod_number: "",
-          signature_url: "", delivery_latitude: "", delivery_longitude: "",
-          location_accuracy_meters: ""
-        });
-        onClose();
-      }
-    });
+    );
   };
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Create New POD Record">
       <form onSubmit={handleSubmit} className="space-y-6 text-sm">
-        <div className="space-y-4">
-          <h3 className="font-bold text-gray-800 text-xs uppercase tracking-widest border-b pb-1">Essential Information</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-gray-700 font-medium mb-1 uppercase text-[10px]">Trip (Delivered/Completed) *</label>
-              <select
-                required
-                className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-[#0052CC]"
-                value={selectedTripId}
-                onChange={e => {
-                  setSelectedTripId(e.target.value);
-                  setFormData((prev) => ({ ...prev, trip_stop: "" }));
-                }}
-              >
-                <option value="">Select trip</option>
-                {doneTrips.map((trip) => (
-                  <option key={trip.id} value={trip.id}>
-                    {trip.trip_number || trip.id.slice(-8)} - {trip.status}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-gray-700 font-medium mb-1 uppercase text-[10px]">Delivery Stop *</label>
-              <select
-                required
-                className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-[#0052CC]"
-                value={formData.trip_stop}
-                onChange={e => setFormData({ ...formData, trip_stop: e.target.value })}
-                disabled={!selectedTripId}
-              >
-                <option value="">{selectedTripId ? 'Select delivery stop' : 'Select trip first'}</option>
-                {deliveryStops.map((stop) => (
-                  <option key={stop.id} value={stop.id}>
-                    #{stop.stop_sequence} - {stop.location_address || 'Delivery stop'}
-                  </option>
-                ))}
-              </select>
-              {!!selectedTripId && deliveryStops.length > 1 && !formData.trip_stop && (
-                <p className="mt-1 text-[10px] font-semibold text-amber-600">
-                  Multiple delivery stops found. Select the correct stop before submitting POD.
-                </p>
-              )}
-            </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-gray-700 font-medium mb-1 uppercase text-[10px]">Trip *</label>
+            <select
+              required
+              className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-[#0052CC]"
+              value={selectedTripId}
+              onChange={(e) => {
+                setSelectedTripId(e.target.value);
+                setFormData((prev) => ({ ...prev, order_id: '' }));
+              }}
+            >
+              <option value="">Select trip</option>
+              {trips.map((trip) => (
+                <option key={trip.id} value={trip.id}>
+                  {trip.trip_number || trip.id.slice(-8)} — {trip.status}
+                </option>
+              ))}
+            </select>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-gray-700 font-medium mb-1 uppercase text-[10px]">Delivery Date & Time *</label>
-              <input
-                type="datetime-local" required
-                className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-[#0052CC]"
-                value={formData.delivery_date}
-                onChange={e => setFormData({ ...formData, delivery_date: e.target.value })}
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-gray-700 font-medium mb-1 uppercase text-[10px]">Recipient Name *</label>
-              <input
-                type="text" required
-                className="w-full p-2 border border-gray-300 rounded"
-                value={formData.received_by_name}
-                onChange={e => setFormData({ ...formData, received_by_name: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="block text-gray-700 font-medium mb-1 uppercase text-[10px]">Relation</label>
-              <input
-                type="text"
-                className="w-full p-2 border border-gray-300 rounded"
-                value={formData.received_by_relation}
-                onChange={e => setFormData({ ...formData, received_by_relation: e.target.value })}
-              />
-            </div>
+          <div>
+            <label className="block text-gray-700 font-medium mb-1 uppercase text-[10px]">LR (optional)</label>
+            <select
+              className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-[#0052CC]"
+              value={formData.order_id}
+              onChange={(e) => setFormData({ ...formData, order_id: e.target.value })}
+              disabled={!selectedTripId}
+            >
+              <option value="">Trip-level POD</option>
+              {linkedOrders.map((o) => (
+                <option key={o.order_id} value={o.order_id}>
+                  {o.lr_number || o.order_id}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
-        <div className="space-y-4">
-          <h3 className="font-bold text-gray-800 text-xs uppercase tracking-widest border-b pb-1">POD Details</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-gray-700 font-medium mb-1 uppercase text-[10px]">POD Number</label>
-              <input type="text" className="w-full p-2 border border-gray-300 rounded" value={formData.pod_number} onChange={e => setFormData({ ...formData, pod_number: e.target.value })} />
-            </div>
-            <div>
-              <label className="block text-gray-700 font-medium mb-1 uppercase text-[10px]">Delivery Status</label>
-              <select className="w-full p-2 border border-gray-300 rounded" value={formData.delivery_status} onChange={e => setFormData({ ...formData, delivery_status: e.target.value })}>
-                <option value="DELIVERED">DELIVERED</option>
-                <option value="PARTIAL">PARTIAL</option>
-                <option value="DAMAGED">DAMAGED</option>
-                <option value="REFUSED">REFUSED</option>
-                <option value="RETURNED">RETURNED</option>
-              </select>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <input type="url" placeholder="Signature URL" className="w-full p-2 border border-gray-300 rounded" value={formData.signature_url} onChange={e => setFormData({ ...formData, signature_url: e.target.value })} />
-            <input type="text" placeholder="Photo URLs (comma separated)" className="w-full p-2 border border-gray-300 rounded" onChange={e => setFormData({ ...formData, photo_urls: e.target.value.split(',').map(v => v.trim()).filter(Boolean) })} />
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            <input type="number" step="0.000001" placeholder="Latitude" className="w-full p-2 border border-gray-300 rounded" value={formData.delivery_latitude} onChange={e => setFormData({ ...formData, delivery_latitude: e.target.value })} />
-            <input type="number" step="0.000001" placeholder="Longitude" className="w-full p-2 border border-gray-300 rounded" value={formData.delivery_longitude} onChange={e => setFormData({ ...formData, delivery_longitude: e.target.value })} />
-            <input type="number" step="0.01" placeholder="Accuracy (m)" className="w-full p-2 border border-gray-300 rounded" value={formData.location_accuracy_meters} onChange={e => setFormData({ ...formData, location_accuracy_meters: e.target.value })} />
-          </div>
-          <textarea className="w-full p-2 border border-gray-300 rounded" rows="2" placeholder="Remarks" value={formData.remarks} onChange={e => setFormData({ ...formData, remarks: e.target.value })} />
-          <div className="grid grid-cols-2 gap-4">
-            <textarea className="w-full p-2 border border-gray-300 rounded" rows="2" placeholder="Damage notes" value={formData.damage_notes} onChange={e => setFormData({ ...formData, damage_notes: e.target.value })} />
-            <textarea className="w-full p-2 border border-gray-300 rounded" rows="2" placeholder="Shortage notes" value={formData.shortage_notes} onChange={e => setFormData({ ...formData, shortage_notes: e.target.value })} />
-          </div>
+        <div>
+          <label className="block text-gray-700 font-medium mb-1 uppercase text-[10px]">POD file *</label>
+          <input
+            type="file"
+            required
+            accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+            className="w-full text-sm"
+            onChange={(e) => setPodFile(e.target.files?.[0] || null)}
+          />
         </div>
+        <div className="grid grid-cols-2 gap-4">
+          <input
+            type="text"
+            placeholder="Received by (optional)"
+            className="w-full p-2 border border-gray-300 rounded"
+            value={formData.received_by_name}
+            onChange={(e) => setFormData({ ...formData, received_by_name: e.target.value })}
+          />
+          <select
+            className="w-full p-2 border border-gray-300 rounded"
+            value={formData.delivery_status}
+            onChange={(e) => setFormData({ ...formData, delivery_status: e.target.value })}
+          >
+            <option value="DELIVERED">DELIVERED</option>
+            <option value="PARTIAL">PARTIAL</option>
+            <option value="DAMAGED">DAMAGED</option>
+            <option value="REFUSED">REFUSED</option>
+            <option value="RETURNED">RETURNED</option>
+          </select>
+        </div>
+        <textarea className="w-full p-2 border border-gray-300 rounded" rows="2" placeholder="Remarks" value={formData.remarks} onChange={(e) => setFormData({ ...formData, remarks: e.target.value })} />
+        <textarea className="w-full p-2 border border-gray-300 rounded" rows="2" placeholder="Damage notes" value={formData.damage_notes} onChange={(e) => setFormData({ ...formData, damage_notes: e.target.value })} />
         <div className="flex justify-end gap-3 pt-6 border-t">
           <button type="button" onClick={onClose} className="px-5 py-2.5 text-gray-600 bg-gray-100 rounded-lg">Cancel</button>
           <button
             type="submit"
-            disabled={createPODMutation.isPending || !selectedTripId || !formData.trip_stop}
+            disabled={createPODMutation.isPending || !selectedTripId || !podFile}
             className="px-6 py-2.5 text-white bg-[#0052CC] rounded-lg shadow-md disabled:opacity-50"
           >
-            {createPODMutation.isPending ? 'Saving...' : 'Confirm POD'}
+            {createPODMutation.isPending ? 'Uploading…' : 'Upload POD'}
           </button>
         </div>
       </form>
@@ -280,9 +224,16 @@ export function EditDeliveryModal({ isOpen, onClose, delivery }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    updateDeliveryMutation.mutate({ id: delivery.id, data: formData }, {
-      onSuccess: () => onClose()
-    });
+    const { received_by_relation, shortage_notes, signature_url, pod_number, delivery_latitude, delivery_longitude, location_accuracy_meters, ...rest } = formData;
+    const data = {
+      ...rest,
+      document_name: pod_number || delivery.document_name,
+      document_number: pod_number || delivery.document_number,
+    };
+    updateDeliveryMutation.mutate(
+      { id: delivery.id, tripId: delivery.trip || delivery.trip_id, data },
+      { onSuccess: () => onClose() }
+    );
   };
 
   return (

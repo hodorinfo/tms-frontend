@@ -16,6 +16,8 @@ import { useDrivers } from '../../queries/drivers/driverCoreQuery';
 import { useVehicles } from '../../queries/vehicles/vehicleQuery';
 import { useVehicleTypes } from '../../queries/vehicles/vehicletypeQuery';
 import { tripsApi } from '../../api/orders/ordersEndpoint';
+import LRTabStrip from './trip/LRTabStrip';
+import ScopeBadge from './trip/ScopeBadge';
 
 const formatLabel = (str) => {
   if (!str) return "";
@@ -533,7 +535,7 @@ export function EditTripModal({ isOpen, onClose, trip }) {
         (trip.order_ids && trip.order_ids.length ? trip.order_ids[0] : trip.order_id) || null
       );
     }
-  }, [trip, isOpen, tripStops]); 
+  }, [trip, isOpen]);
 
   useEffect(() => {
     if (!initialFormData) return;
@@ -905,6 +907,7 @@ export function EditTripModal({ isOpen, onClose, trip }) {
                 <div className="flex items-center gap-3 mb-6 border-b border-gray-100 pb-4">
                   <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl shadow-sm border border-blue-100/50"><FileText size={24} /></div>
                   <h2 className="text-xl font-bold text-gray-800 tracking-tight">General Information</h2>
+                  <ScopeBadge variant="lr" />
                 </div>
                 <div className="grid grid-cols-1 gap-6">
                   <FieldGroup label="linked orders">
@@ -985,7 +988,9 @@ export function EditTripModal({ isOpen, onClose, trip }) {
                 <div className="flex items-center gap-3 mb-6 border-b border-gray-100 pb-4">
                   <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl shadow-sm border border-indigo-100/50"><Truck size={24} /></div>
                   <h2 className="text-xl font-bold text-gray-800 tracking-tight">Fleet & Team Allocation</h2>
+                  <ScopeBadge variant="trip" />
                 </div>
+                <p className="text-xs font-bold text-violet-700 bg-violet-50 border border-violet-100 rounded-lg px-3 py-2 inline-block">Applies to all linked LRs</p>
                 <div className="grid grid-cols-2 gap-6">
                   <FieldGroup label="Primary vehicle">
                     <select className={inputClass} value={formData.primary_vehicle_id || ""} onChange={e => {
@@ -1078,6 +1083,7 @@ export function EditTripModal({ isOpen, onClose, trip }) {
                 <div className="flex items-center gap-3 mb-6 border-b border-gray-100 pb-4">
                   <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl shadow-sm border border-emerald-100/50"><MapPin size={24} /></div>
                   <h2 className="text-xl font-bold text-gray-800 tracking-tight">Route & Schedule</h2>
+                  <ScopeBadge variant="lr" />
                 </div>
                 <div className="bg-gray-50/50 rounded-2xl p-6 border border-gray-100 flex gap-6 relative overflow-hidden group mb-8">
                   {/* Visual Journey Line */}
@@ -1119,21 +1125,12 @@ export function EditTripModal({ isOpen, onClose, trip }) {
                 </div>
 
                 <div className="border border-gray-200 rounded-xl p-4 bg-gray-50/40 mt-6">
-                  <div className="mb-4 flex flex-wrap gap-2">
-                    {linkedOrdersForTrip.map(order => (
-                      <button
-                        key={order.id}
-                        type="button"
-                        onClick={() => setActiveRouteOrderId(order.id)}
-                        className={`px-3 py-1 rounded-lg text-[11px] font-bold border ${
-                          String(activeRouteOrderId) === String(order.id)
-                            ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-white text-gray-600 border-gray-200'
-                        }`}
-                      >
-                        {order.lr_number}
-                      </button>
-                    ))}
+                  <div className="mb-4">
+                    <LRTabStrip
+                      linkedOrders={linkedOrdersForTrip.map((order) => ({ order_id: order.id, lr_number: order.lr_number }))}
+                      activeOrderId={activeRouteOrderId}
+                      onChange={setActiveRouteOrderId}
+                    />
                   </div>
                   <div className={`mb-4 rounded-lg border px-3 py-2 text-xs font-semibold transition-all ${
                     stopErrors.length

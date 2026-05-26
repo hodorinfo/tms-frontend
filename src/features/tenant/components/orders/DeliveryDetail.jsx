@@ -50,7 +50,8 @@ export default function DeliveryDetail() {
   const deleteDeliveryMutation = useDeleteDelivery();
 
   const { data: pod, isLoading, isError, error } = useDeliveryDetail(id);
-  const { data: trip } = useTripDetail(pod?.trip_id || pod?.trip || pod?.trip_stop?.trip_id);
+  const tripId = pod?.trip_id || pod?.trip;
+  const { data: trip } = useTripDetail(tripId);
 
   const handleBack = () => navigate('/tenant/dashboard/orders/deliveries');
 
@@ -81,7 +82,7 @@ export default function DeliveryDetail() {
             <ArrowLeft size={14} /> Deliveries & POD
           </button>
           <ChevronRight size={14} className="text-gray-300" />
-          <span className="font-semibold text-[#172B4D]">{pod.pod_number || pod.id.slice(-8)}</span>
+          <span className="font-semibold text-[#172B4D]">{pod.document_name || pod.id.slice(-8)}</span>
         </div>
 
         {/* Header Summary */}
@@ -94,10 +95,10 @@ export default function DeliveryDetail() {
                 <div>
                   <h1 className="text-2xl font-black text-[#172B4D] flex items-center gap-3">
                     {pod.received_by_name || pod.received_by || 'Unknown Recipient'}
-                    <span className="text-xs font-mono bg-gray-100 text-gray-500 px-2 py-1 rounded-md border border-gray-200 uppercase tracking-wider">{pod.pod_number || 'TR-' + pod.id.slice(-6)}</span>
+                    <span className="text-xs font-mono bg-gray-100 text-gray-500 px-2 py-1 rounded-md border border-gray-200 uppercase tracking-wider">{pod.trip_number || 'TR-' + pod.id.slice(-6)}</span>
                   </h1>
                   <p className="text-sm text-gray-500 font-medium mt-1 uppercase tracking-wider">
-                    Relation: {pod.received_by_relation || 'Self'} · Stop: {pod.trip_stop?.location_address || 'N/A'}
+                    Trip document · {pod.document_name || 'POD copy'}
                   </p>
                   <div className="flex flex-wrap items-center gap-2 mt-4">
                     <Badge className={`${st.bg} ${st.color} border-current/20`}>
@@ -110,7 +111,7 @@ export default function DeliveryDetail() {
                     </Badge>
                     <Badge className="bg-gray-50 text-gray-600 border-gray-100 flex items-center gap-1.5">
                       <Calendar size={12} />
-                      {pod.delivery_date ? new Date(pod.delivery_date).toLocaleDateString() : '—'}
+                      {pod.created_at ? new Date(pod.created_at).toLocaleDateString() : '—'}
                     </Badge>
                   </div>
                 </div>
@@ -125,7 +126,8 @@ export default function DeliveryDetail() {
                     onClick={() => {
                       updateDeliveryMutation.mutate({
                         id: pod.id,
-                        data: { delivery_status: 'DELIVERED' }
+                        tripId,
+                        data: { delivery_status: 'DELIVERED', verified_status: 'VERIFIED' },
                       });
                     }}
                     className="px-5 py-2.5 text-sm font-black text-white bg-green-600 rounded-xl hover:bg-green-700 shadow-lg shadow-green-100 transition-all flex items-center gap-2"
@@ -135,7 +137,7 @@ export default function DeliveryDetail() {
                   <button
                     onClick={() => {
                       if (window.confirm('Delete this POD record?')) {
-                        deleteDeliveryMutation.mutate(pod.id, { onSuccess: handleBack });
+                        deleteDeliveryMutation.mutate({ id: pod.id, tripId }, { onSuccess: handleBack });
                       }
                     }}
                     className="px-5 py-2.5 text-sm font-black text-red-600 bg-red-50 border border-red-100 rounded-xl hover:bg-red-100 transition-all"
@@ -146,9 +148,9 @@ export default function DeliveryDetail() {
               </div>
 
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-                <InfoCard label="Delivery Time" value={pod.delivery_date ? new Date(pod.delivery_date).toLocaleTimeString() : '—'} icon={Clock} accent />
-                <InfoCard label="Trip Number" value={trip?.trip_number} icon={Hash} />
-                <InfoCard label="Location" value={pod.trip_stop?.location_address || '—'} icon={MapPin} />
+                <InfoCard label="Uploaded" value={pod.created_at ? new Date(pod.created_at).toLocaleString() : '—'} icon={Clock} accent />
+                <InfoCard label="Trip Number" value={pod.trip_number || trip?.trip_number} icon={Hash} />
+                <InfoCard label="File" value={pod.document_name || 'POD'} icon={MapPin} />
                 <InfoCard label="Record ID" value={pod.id.slice(-8)} icon={Layers} />
               </div>
             </div>
@@ -178,16 +180,20 @@ export default function DeliveryDetail() {
                 </div>
                 <div className="space-y-4">
                   <div className="p-4 bg-blue-50/50 rounded-2xl border border-blue-100 text-left">
-                    <SectionHeader icon={Camera} title="Delivery Evidence" />
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="aspect-[4/3] bg-white rounded-lg border border-gray-100 flex items-center justify-center text-gray-300">
-                        <Camera size={24} className="opacity-20" />
-                      </div>
-                      <div className="aspect-[4/3] bg-white rounded-lg border border-gray-100 flex items-center justify-center text-gray-300">
-                        <Camera size={24} className="opacity-20" />
-                      </div>
-                    </div>
-                    <button className="w-full mt-3 py-2 text-[10px] font-black text-blue-600 uppercase transition-all hover:underline">View All Attachments (0)</button>
+                    <SectionHeader icon={Camera} title="POD copy" />
+                    {pod.file_url ? (
+                      pod.file_url.toLowerCase().includes('.pdf') ? (
+                        <a href={pod.file_url} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-blue-600 underline">
+                          Open PDF
+                        </a>
+                      ) : (
+                        <a href={pod.file_url} target="_blank" rel="noopener noreferrer" className="block">
+                          <img src={pod.file_url} alt="POD" className="max-h-64 rounded-lg border border-gray-100" />
+                        </a>
+                      )
+                    ) : (
+                      <p className="text-xs text-gray-400 italic">No file</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -203,8 +209,8 @@ export default function DeliveryDetail() {
                     <p className="text-xs font-medium text-amber-800 italic">{pod.damage_notes || 'None reported'}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-1">Shortage Notes</p>
-                    <p className="text-xs font-medium text-amber-800 italic">{pod.shortage_notes || 'None reported'}</p>
+                    <p className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-1">Remarks</p>
+                    <p className="text-xs font-medium text-amber-800 italic">{pod.remarks || 'None'}</p>
                   </div>
                 </div>
               </div>

@@ -5,7 +5,7 @@ import {
   Search, Plus, MapPin, User, FileCheck, Image as ImageIcon,
   Edit2, Eye, Calendar, Hash, RefreshCcw
 } from 'lucide-react';
-import { useDeliveries } from '../../queries/orders/ordersQuery';
+import { useDeliveries, useDeleteDelivery } from '../../queries/orders/ordersQuery';
 import {
   CreatePODModal,
   EditDeliveryModal
@@ -55,7 +55,8 @@ export default function DeliveryMainBody() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedPod, setSelectedPod] = useState(null);
-  const queryParams = { page, ordering: '-delivery_date' };
+  const deleteDeliveryMutation = useDeleteDelivery();
+  const queryParams = { page, ordering: '-created_at' };
   if (search) queryParams.search = search;
   if (filterStatus !== 'All Status') queryParams.delivery_status = filterStatus;
 
@@ -206,10 +207,10 @@ export default function DeliveryMainBody() {
                       <td className="px-6 py-5">
                         <div className="flex flex-col">
                           <span className="text-sm font-bold text-[#172B4D] flex items-center gap-2">
-                            <Hash size={14} className="text-gray-400" /> {pod.pod_number || pod.id?.slice(-8)}
+                            <Hash size={14} className="text-gray-400" /> {pod.document_name || pod.document_number || pod.id?.slice(-8)}
                           </span>
-                          <span className="text-[10px] text-gray-500 font-bold mt-1 uppercase" title={pod.trip_stop}>
-                            Stop: {pod.stop_sequence ? `#${pod.stop_sequence}` : 'N/A'}
+                          <span className="text-[10px] text-gray-500 font-bold mt-1 uppercase">
+                            Trip: {pod.trip_number || 'N/A'}
                           </span>
                         </div>
                       </td>
@@ -219,21 +220,21 @@ export default function DeliveryMainBody() {
                             <User size={14} className="text-[#0052CC]" /> {pod.received_by_name || 'Unknown'}
                           </div>
                           <div className="flex items-center gap-2 text-[11px] font-medium text-gray-500">
-                            <MapPin size={12} /> {pod.stop_location || 'N/A'}
+                            <MapPin size={12} /> LR: {pod.order_id ? String(pod.order_id).slice(0, 8) + '…' : 'Trip-level'}
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-5">
                         <div className="flex items-center gap-2 text-sm font-semibold text-gray-600">
-                          <Calendar size={14} className="text-gray-400" /> {formatDate(pod.delivery_date)}
+                          <Calendar size={14} className="text-gray-400" /> {formatDate(pod.created_at || pod.issue_date)}
                         </div>
                       </td>
                       <td className="px-6 py-5">
                         <div className="flex flex-col gap-2 items-start">
                           <StatusBadge status={pod.delivery_status} />
-                          {Array.isArray(pod.photo_urls) && pod.photo_urls.length > 0 && (
+                          {pod.file_url && (
                             <span className="flex items-center gap-1 text-[10px] font-bold text-blue-500 uppercase">
-                              <ImageIcon size={12} /> Photo Attached
+                              <ImageIcon size={12} /> File Attached
                             </span>
                           )}
                         </div>
@@ -254,7 +255,7 @@ export default function DeliveryMainBody() {
                             onClick={() => {
 
                               if (window.confirm('Delete this POD record?')) {
-                                deleteDeliveryMutation.mutate(pod.id);
+                                deleteDeliveryMutation.mutate({ id: pod.id, tripId: pod.trip });
                               }
                             }}
                             className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
