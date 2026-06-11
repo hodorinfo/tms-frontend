@@ -12,6 +12,7 @@ import {
   useDeleteAttendance,
 } from '../../../../queries/drivers/incidentsAndAttendance';
 import DriverSelect from '../../common/DriverSelect';
+import { formatDateTime } from '@/utils/dateFormat';
 import { ATTENDANCE_STATUS, STATUS_STYLES } from '../../common/constants';
 import { User, FileText, Clock, Calendar, CheckSquare } from 'lucide-react';
 import StatusBadge from '../../common/StatusBadge';
@@ -357,7 +358,7 @@ export const ViewAttendanceModal = ({ record, driverName, employeeId, onClose })
             <LabelValue label="Total Hours" value={record.total_hours != null ? `${record.total_hours} hrs` : '—'} />
             <LabelValue
               label="Record Created At"
-              value={record.created_at ? new Date(record.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }).replace(',', '') : '—'}
+              value={record.created_at ? formatDateTime(record.created_at) : '—'}
             />
           </div>
 

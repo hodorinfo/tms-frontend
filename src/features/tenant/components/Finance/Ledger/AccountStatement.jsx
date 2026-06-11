@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useJournalEntries } from '../../../queries/finance/financeQuery'
 import { Calendar, Download, RefreshCw, ChevronLeft, ArrowUpRight, ArrowDownLeft } from 'lucide-react'
+import { formatDate, formatDateTime, formatDateShort, toInputDate } from '@/utils/dateFormat';
 
 export default function AccountStatement({ account, onBack }) {
   const [dateRange, setDateRange] = useState('all') // 'all', 'this_month', 'last_month'
@@ -136,7 +137,7 @@ export default function AccountStatement({ account, onBack }) {
                 statementLines.map((line, idx) => (
                   <tr key={idx} className="hover:bg-gray-50/50 transition-colors">
                     <td className="px-6 py-4 text-sm font-medium text-gray-900 whitespace-nowrap">
-                      {new Date(line.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      {formatDateShort(line.date)}
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm font-bold text-gray-900">{line.reference}</div>

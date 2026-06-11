@@ -91,13 +91,13 @@ export const tripsApi = {
     axiosInstance.get(`${BASE_TRIPS}/pod-documents/${id}/`).then(r => r.data),
 
   listExpenses: (tripId) =>
-    axiosInstance.get(`${BASE_TRIPS}/${tripId}/expenses/`).then(r => r.data),
+    axiosInstance.get(`/api/v1/finance/expenses/by-trip/${tripId}/`).then(r => r.data),
   createExpense: (tripId, data) =>
-    axiosInstance.post(`${BASE_TRIPS}/${tripId}/expenses/`, data).then(r => r.data),
-  updateExpense: (tripId, expenseId, data) =>
-    axiosInstance.patch(`${BASE_TRIPS}/${tripId}/expenses/${expenseId}/`, data).then(r => r.data),
-  deleteExpense: (tripId, expenseId) =>
-    axiosInstance.delete(`${BASE_TRIPS}/${tripId}/expenses/${expenseId}/`).then(r => r.data),
+    axiosInstance.post(`/api/v1/finance/expenses/`, { ...data, trip_id: tripId }).then(r => r.data),
+  updateExpense: (_tripId, expenseId, data) =>
+    axiosInstance.patch(`/api/v1/finance/expenses/${expenseId}/`, data).then(r => r.data),
+  deleteExpense: (_tripId, expenseId) =>
+    axiosInstance.delete(`/api/v1/finance/expenses/${expenseId}/`).then(r => r.data),
 
   listCharges: (tripId) =>
     axiosInstance.get(`${BASE_TRIPS}/${tripId}/charges/`).then(r => r.data),
@@ -107,6 +107,16 @@ export const tripsApi = {
     axiosInstance.patch(`${BASE_TRIPS}/${tripId}/charges/${chargeId}/`, data).then(r => r.data),
   deleteCharge: (tripId, chargeId) =>
     axiosInstance.delete(`${BASE_TRIPS}/${tripId}/charges/${chargeId}/`).then(r => r.data),
+
+  listLRFinance: (tripId, params) =>
+    axiosInstance.get(`${BASE_TRIPS}/${tripId}/lr-finance/`, { params }).then(r => r.data),
+  createLRFinance: (tripId, data) =>
+    axiosInstance.post(`${BASE_TRIPS}/${tripId}/lr-finance/`, data).then(r => r.data),
+  updateLRFinance: (tripId, lrFinanceId, data) =>
+    axiosInstance.patch(`${BASE_TRIPS}/${tripId}/lr-finance/${lrFinanceId}/`, data).then(r => r.data),
+  deleteLRFinance: (tripId, lrFinanceId) =>
+    axiosInstance.delete(`${BASE_TRIPS}/${tripId}/lr-finance/${lrFinanceId}/`).then(r => r.data),
+
   listCargo: (tripId, params) =>
     axiosInstance.get(`${BASE_TRIPS}/${tripId}/cargo/`, { params }).then(r => r.data),
 
@@ -136,8 +146,8 @@ export const cargoApi = {
     axiosInstance.patch(`${BASE_CARGO}/${id}/`, data).then(r => r.data),
   replace: (id, data) =>
     axiosInstance.put(`${BASE_CARGO}/${id}/`, data).then(r => r.data),
-  transitionStatus: (id, new_status) =>
-    axiosInstance.post(`${BASE_CARGO}/${id}/transition-status/`, { new_status }).then(r => r.data),
+  sync: (data) =>
+    axiosInstance.post(`${BASE_CARGO}/sync/`, data).then(r => r.data),
   delete: (id) =>
     axiosInstance.delete(`${BASE_CARGO}/${id}/`).then(r => r.data),
 }
@@ -164,5 +174,5 @@ export const deliveriesApi = {
     return tripsApi.updateDocument(tripId, id, data)
   },
   replace: (id, data) => deliveriesApi.update(id, data),
-  delete: (id) => Promise.reject(new Error('Use tripsApi.deleteDocument(tripId, id)')),
+  delete: () => Promise.reject(new Error('Use tripsApi.deleteDocument(tripId, id)')),
 }

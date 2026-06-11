@@ -60,15 +60,14 @@ const orderSubItems = [
 ];
 
 const financeSubItems = [
-  { name: 'Invoices', icon: <FileText size={13} />, path: '/tenant/dashboard/finance/invoices', badge: null },
-  { name: 'Finance Periods', icon: <FileText size={13} />, path: '/tenant/dashboard/finance/periods', badge: null },
-  { name: 'Ledger', icon: <BarChart2 size={13} />, path: '/tenant/dashboard/finance/ledger', badge: null },
-  { name: 'Reconciliations', icon: <GitMerge size={13} />, path: '/tenant/dashboard/finance/reconciliations', badge: null },
-  { name: 'Customer Payments', icon: <Banknote size={13} />, path: '/tenant/dashboard/finance/customer-payments', badge: null },
-  { name: 'Owner Payables', icon: <Banknote size={13} />, path: '/tenant/dashboard/finance/owner-payments', badge: null },
-  { name: 'Payroll', icon: <Users size={13} />, path: '/tenant/dashboard/finance/payroll', badge: null },
-  { name: 'TDS Management', icon: <Shield size={13} />, path: '/tenant/dashboard/finance/tds', badge: null },
-  { name: 'Advances', icon: <Globe size={13} />, path: '/tenant/dashboard/finance/advances', badge: null },
+  { name: 'Dashboard', icon: <BarChart2 size={13} />, path: '/tenant/dashboard/finance', badge: null },
+  { name: 'Trips & LR Finance', icon: <GitMerge size={13} />, path: '/tenant/dashboard/finance/trips', badge: null },
+  { name: 'Customer Billing', icon: <FileText size={13} />, path: '/tenant/dashboard/finance/billing', badge: null },
+  { name: 'Driver Finance', icon: <Users size={13} />, path: '/tenant/dashboard/finance/drivers', badge: null },
+  { name: 'Vehicle Costs', icon: <Truck size={13} />, path: '/tenant/dashboard/finance/vehicle-costs', badge: null },
+  { name: 'TDS & Compliance', icon: <Shield size={13} />, path: '/tenant/dashboard/finance/tds', badge: null },
+  { name: 'Ledger & Journals', icon: <BarChart2 size={13} />, path: '/tenant/dashboard/finance/ledger', badge: null },
+  { name: 'Finance Periods', icon: <ScrollText size={13} />, path: '/tenant/dashboard/finance/periods', badge: null },
   { name: 'Reports', icon: <BarChart2 size={13} />, path: '/tenant/dashboard/finance/reports', badge: null },
 ];
 
@@ -181,8 +180,6 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
   const isCustomerPath = location.pathname.startsWith('/tenant/dashboard/customers');
   const isFinancePath = location.pathname.startsWith('/tenant/dashboard/finance');
   const ordersNavActive = isOrdersNavActive(location.pathname);
-  const isTripsPath = location.pathname.startsWith(`${ORDERS_ROOT}/trips`);
-  const isCargoPath = location.pathname.startsWith(`${ORDERS_ROOT}/cargo`);
   const isOrderPath = location.pathname.startsWith(ORDERS_ROOT);
 
   const [vehiclesOpen, setVehiclesOpen] = useState(isVehiclePath);
@@ -286,7 +283,7 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
               />
               <NavItem
                 icon={<Banknote />}
-                label="Finance"
+                label="Accounting" // finance is not a good name for this module, change this to Accounting
                 isOpen={financeOpen}
                 setIsOpen={setFinanceOpen}
                 isActive={isFinancePath}

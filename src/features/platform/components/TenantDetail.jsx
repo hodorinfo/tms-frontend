@@ -454,6 +454,7 @@ import {
   useTenant,
   useDeleteTenant
 } from '../queries/tenantQuery'
+import { formatDateShort } from '@/utils/dateFormat'
 
 // ── Status badge colors ──────────────────────────────────────
 const STATUS_STYLES = {
@@ -559,7 +560,7 @@ function TenantDetailModal({ tenantId, onClose, onEdit }) {
                   <InfoRow label="Tenant Code"   value={tenant.tenant_code} />
                   <InfoRow label="Business Type" value={tenant.business_type} />
                   <InfoRow label="Company Size"  value={tenant.company_size} />
-                  <InfoRow label="Member Since"  value={new Date(tenant.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} />
+                  <InfoRow label="Member Since"  value={formatDateShort(tenant.created_at)} />
                 </div>
               </div>
 
@@ -818,7 +819,7 @@ export default function TenantsPage() {
                       : <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-5 py-3.5 text-gray-400 text-xs">
-                    {new Date(tenant.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    {formatDateShort(tenant.created_at)}
                   </td>
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-2">

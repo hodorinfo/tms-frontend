@@ -12,6 +12,7 @@ import {
   useDeletePerformanceMetric,
 } from '../../../../queries/drivers/performanceMetricsQuery';
 import DriverSelect from '../../common/DriverSelect';
+import { formatDateTime } from '@/utils/dateFormat';
 
 // Shared Form Fields for Performance
 const PerformanceFormFields = ({ form, setForm, fieldErrors, setFieldErrors }) => {
@@ -533,10 +534,7 @@ export const ViewPerformanceModal = ({ record, driverName, employeeId, onClose }
         <div className="grid grid-cols-2 gap-x-8 px-2 pt-2">
            <LabelValue 
              label="Record Created At" 
-             value={record.created_at ? new Date(record.created_at).toLocaleString('en-GB', { 
-               day: '2-digit', month: 'short', year: 'numeric', 
-               hour: '2-digit', minute: '2-digit', hour12: true 
-             }) : '—'} 
+             value={record.created_at ? formatDateTime(record.created_at) : '—'} 
            />
            <LabelValue label="Safety Score" value={record.safety_score != null ? `${record.safety_score} / 100` : '—'} />
            <div className="py-3 border-b border-gray-50 last:border-0 flex flex-col gap-1">

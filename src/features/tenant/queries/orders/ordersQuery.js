@@ -400,12 +400,18 @@ export const useDeleteTripDocument = (tripId) => {
   })
 }
 
-export const useTripExpenses = (tripId) => {
+export const useTripExpenses = (tripId, options = {}) => {
+  const { enabled: enabledOverride = true, suppressErrorToast = false, ...queryOptions } = options
   return useQuery({
     queryKey: orderKeys.tripExpenses(tripId),
     queryFn: async () => normalizeListResponse(await tripsApi.listExpenses(tripId)),
-    enabled: !!tripId,
-    onError: (err) => handleApiError(err, 'Failed to fetch trip expenses'),
+    enabled: !!tripId && enabledOverride,
+    retry: false,
+    ...TRIP_QUERY_OPTIONS,
+    ...queryOptions,
+    onError: (err) => {
+      if (!suppressErrorToast) handleApiError(err, 'Failed to fetch trip expenses')
+    },
   })
 }
 
@@ -524,7 +530,14 @@ export const useCargoDetail = (id) => {
 export const useCreateCargo = () => {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (data) => cargoApi.create(data),
+    mutationFn: async (data) => {
+      const resp = await cargoApi.sync({
+        order_id: data?.order || null,
+        trip_id: data?.trip || null,
+        items: [data],
+      })
+      return resp?.results?.[0] || null
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: orderKeys.cargo() })
       toast.success('Cargo item added')
@@ -536,8 +549,14 @@ export const useCreateCargo = () => {
 export const useUpdateCargo = () => {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, data, fullReplace = false }) => 
-      fullReplace ? cargoApi.replace(id, data) : cargoApi.update(id, data),
+    mutationFn: async ({ id, data }) => {
+      const resp = await cargoApi.sync({
+        order_id: data?.order || null,
+        trip_id: data?.trip || null,
+        items: [{ ...data, id }],
+      })
+      return resp?.results?.[0] || null
+    },
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: orderKeys.cargo() })
       queryClient.invalidateQueries({ queryKey: orderKeys.cargoDetail(id) })
@@ -559,16 +578,17 @@ export const useDeleteCargo = () => {
   })
 }
 
-export const useTransitionCargoStatus = () => {
+export const useSyncCargo = () => {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, newStatus }) => cargoApi.transitionStatus(id, newStatus),
-    onSuccess: (_, { id }) => {
+    mutationFn: (data) => cargoApi.sync(data),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: orderKeys.cargo() })
-      queryClient.invalidateQueries({ queryKey: orderKeys.cargoDetail(id) })
-      toast.success('Cargo status updated')
+      queryClient.invalidateQueries({ queryKey: orderKeys.trips() })
+      queryClient.invalidateQueries({ queryKey: orderKeys.all })
+      toast.success('Cargo synchronized')
     },
-    onError: (err) => handleApiError(err, 'Failed to transition cargo status'),
+    onError: (err) => handleApiError(err, 'Failed to sync cargo'),
   })
 }
 

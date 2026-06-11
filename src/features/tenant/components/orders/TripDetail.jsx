@@ -15,7 +15,7 @@ import {
   useOrderDetail, useDeleteTrip, useCreateTripStop,
   useUpdateTripStop, useDeleteTripStop, useTripDeliveries, useUploadTripPod, useUpdateTripDocument, useDeleteTripDocument,
   useUpdateTripExpense, useDeleteTripExpense, useUpdateTripCharge, useDeleteTripCharge, useUpdateTrip,
-  useTripCargoItems, useTransitionCargoStatus,
+  useTripCargoItems,
   orderKeys,
 } from '../../queries/orders/ordersQuery';
 import { ordersApi } from '../../api/orders/ordersEndpoint';
@@ -26,6 +26,7 @@ import { CreateCargoModal } from './CargoModals';
 import { useCurrentUser } from '../../queries/users/rolesPermissionsQuery';
 import LRTabStrip from './trip/LRTabStrip';
 import ScopeBadge from './trip/ScopeBadge';
+import { formatDate, formatDateTime, formatDateShort, toInputDate } from '@/utils/dateFormat';
 
 // --- Shared Components ---
 const Badge = ({ children, className = "", pulse = false }) => (
@@ -119,24 +120,6 @@ const LABEL_MAP = {
   pod_turnaround_days: 'POD TAT (days)',
 };
 
-const formatDateTime = (val) => {
-  if (!val) return '—';
-  const d = new Date(val);
-  if (isNaN(d.getTime())) return val;
-  // If it's just a date (YYYY-MM-DD), show as date
-  if (typeof val === 'string' && val.length === 10) {
-    return d.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  }
-  return d.toLocaleString('en-IN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  });
-};
-
 const TRIP_TRANSITIONS = {
   CREATED: ['ASSIGNED', 'CANCELLED'],
   ASSIGNED: ['DISPATCHED', 'CANCELLED'],
@@ -222,13 +205,6 @@ const LrScopeBanner = ({ activeOrderTab, linkedOrders, stopsCount }) => {
       )}
     </div>
   );
-};
-
-const formatDateOnly = (val) => {
-  if (!val) return '—';
-  const d = new Date(val);
-  if (Number.isNaN(d.getTime())) return val;
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
 const OverviewMeta = ({ label, value, className = '' }) => (
@@ -329,10 +305,10 @@ const OverviewTab = ({
                           <span className="line-clamp-2">{(o?.consignee_address || '—').trim()}</span>
                         </td>
                         <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap tabular-nums">
-                          {formatDateOnly(o?.pickup_date)}
+                          {formatDateShort(o?.pickup_date)}
                         </td>
                         <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap tabular-nums">
-                          {formatDateOnly(o?.delivery_date)}
+                          {formatDateShort(o?.delivery_date)}
                         </td>
                       </tr>
                     );
@@ -366,8 +342,8 @@ const OverviewTab = ({
         <dl className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
           <OverviewMeta label="LR number" value={activeOrder?.lr_number || activeLink?.lr_number} />
           <OverviewMeta label="Customer ref" value={activeOrder?.reference_number || activeLink?.reference_number} />
-          <OverviewMeta label="Pickup" value={formatDateOnly(activeOrder?.pickup_date)} />
-          <OverviewMeta label="Delivery" value={formatDateOnly(activeOrder?.delivery_date)} />
+          <OverviewMeta label="Pickup" value={formatDateShort(activeOrder?.pickup_date)} />
+          <OverviewMeta label="Delivery" value={formatDateShort(activeOrder?.delivery_date)} />
         </dl>
 
         {(activeOrderTab || trip.order_id) && (
@@ -863,91 +839,223 @@ const DeliveriesTab = ({
   );
 };
 
-const FinanceTab = ({ trip, expenses, charges, isLoadingExp, isLoadingChg, onEditFinance, onDeleteFinance }) => (
-  <div className="space-y-8">
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <InfoCard label="total_bill_amount" value={`₹ ${trip.total_bill_amount || '0.00'}`} icon={DollarSign} accent />
-        <InfoCard label="total_freight_charge" value={`₹ ${trip.total_freight_charge}`} icon={Receipt} />
-        <InfoCard label="total_accessorial_charge" value={`₹ ${trip.total_accessorial_charge}`} icon={Plus} />
-        <InfoCard label="total_tax" value={`₹ ${trip.total_tax}`} icon={Shield} />
-    </div>
+const FinanceTab = ({
+  trip,
+  expenses,
+  charges,
+  isLoadingExp,
+  isLoadingChg,
+  expensesError,
+  onEditFinance,
+  onDeleteFinance,
+  linkedOrders = [],
+  lrRows = [],
+  activeOrderTab,
+  setActiveOrderTab,
+}) => {
+  const [activeFinanceTab, setActiveFinanceTab] = useState('trip-charges');
+  const isHiredCarrier = trip.vehicle_ownership_type === 'HIRED_CARRIER';
+  const lrFinanceMap = useMemo(() => {
+    const map = {};
+    (trip.lr_finance || []).forEach((row) => {
+      map[String(row.order_id)] = row;
+    });
+    return map;
+  }, [trip.lr_finance]);
+  const activeLrRow =
+    lrRows.find((r) => String(r.order_id) === String(activeOrderTab)) || lrRows[0] || null;
+  const activeLrOrder = activeLrRow?.order;
+  const activeLrFinance = activeLrRow ? lrFinanceMap[String(activeLrRow.order_id)] : null;
+  const hasLrData = linkedOrders.length > 0;
 
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-      <div className="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm flex flex-col h-full overflow-hidden">
-        <SectionHeader icon={CreditCard} title="Commissions & Deductibles" />
-        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-1">
-          <DataRow label="broker_commission" value={`₹ ${trip.broker_commission || '0.00'}`} icon={DollarSign} />
-          <DataRow label="booked_price" value={`₹ ${trip.booked_price || '0.00'}`} icon={DollarSign} />
-          <DataRow label="part_load_charge" value={`₹ ${trip.part_load_charge || '0.00'}`} icon={PackageIcon} />
-          <DataRow label="tds_percentage" value={`${trip.tds_percentage || '0.00'} %`} icon={Activity} />
-          <DataRow label="tds_amount" value={`₹ ${trip.tds_amount || '0.00'}`} icon={DollarSign} />
-          <DataRow label="late_fee" value={`₹ ${trip.late_fee || '0.00'}`} icon={AlertCircle} />
-          <DataRow label="damage_amount" value={`₹ ${trip.damage_amount || '0.00'} (${trip.damage_count || 0} items)`} icon={AlertCircle} />
-          <DataRow label="incentive_amount" value={`₹ ${trip.incentive_amount || '0.00'}`} icon={Plus} />
-        </div>
+  const financeTabs = [
+    { id: 'trip-charges', label: 'Trip Summary' },
+    { id: 'lr-finance', label: 'LR Finance' },
+    ...(isHiredCarrier ? [{ id: 'owner-carrier', label: 'Owner / Carrier' }] : []),
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="inline-flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white p-1.5">
+        {financeTabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveFinanceTab(tab.id)}
+            className={`rounded-lg px-3 py-1.5 text-[11px] font-black uppercase tracking-wider transition-colors ${
+              activeFinanceTab === tab.id
+                ? 'bg-blue-600 text-white'
+                : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
-      <div className="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm flex flex-col h-full overflow-hidden">
-        <SectionHeader icon={Clock} title="Payment Settlement" />
-        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-1">
-          <DataRow label="payment_received_amount" value={`₹ ${trip.payment_received_amount || '0.00'}`} icon={DollarSign} />
-          <DataRow label="payment_received_date" value={trip.payment_received_date} icon={Calendar} />
-          <DataRow label="pod_received_date" value={trip.pod_received_date} icon={FileText} />
-          <DataRow label="pod_turnaround_days" value={`${trip.pod_turnaround_days || '—'} Days`} icon={Clock} />
-        </div>
-      </div>
-    </div>
-    <div className="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm">
-      <SectionHeader icon={Receipt} title="Expense & Charge Records" />
-      {(isLoadingExp || isLoadingChg) ? (
-        <div className="flex justify-center p-8"><Loader2 className="animate-spin text-blue-600" /></div>
-      ) : (
-        <div className="max-h-[400px] overflow-y-auto pr-2 custom-scrollbar space-y-3">
-          {[...(expenses || []).map(e => ({ ...e, res_type: 'EXPENSE', label: e.expense_type })), ...(charges || []).map(c => ({ ...c, res_type: 'CHARGE', label: c.charge_type }))].map((item) => (
-            <div key={item.id} className="flex items-center justify-between p-4 rounded-2xl border border-gray-50 hover:bg-gray-50 transition-all">
-              <div className="flex items-center gap-4">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${item.res_type === 'EXPENSE' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
-                   {item.res_type === 'EXPENSE' ? <Receipt size={18} /> : <Plus size={18} />}
-                </div>
-                <div>
-                  <p className="text-sm font-black text-[#172B4D] uppercase tracking-tight">{item.label || item.res_type}</p>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{item.res_type} • {item.status || 'PENDING'}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-6">
-                <p className="text-lg font-black text-[#172B4D] tracking-tighter">₹ {item.amount || '0.00'}</p>
-                <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => onEditFinance(item)} className="p-2 rounded-lg bg-gray-50 text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-all">
-                        <Edit3 size={14} />
-                    </button>
-                    <button type="button" onClick={() => onDeleteFinance(item)} className="p-2 rounded-lg bg-gray-50 text-gray-500 hover:text-red-600 hover:bg-red-50 transition-all">
-                        <Trash2 size={14} />
-                    </button>
-                </div>
-              </div>
+
+      {activeFinanceTab === 'trip-charges' && (
+        <div className="space-y-8">
+          <div className="rounded-xl border border-gray-100 bg-gray-50/60 px-4 py-3 text-xs text-gray-600">
+            Ownership: <span className="font-bold text-gray-800">{isHiredCarrier ? 'Hired Carrier' : 'Own Fleet'}</span>
+            {!isHiredCarrier && (
+              <span className="ml-2 text-gray-500">— vehicle costs tracked via Expenses</span>
+            )}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <InfoCard label="total_bill_amount" value={`₹ ${trip.total_bill_amount || '0.00'}`} icon={DollarSign} accent />
+            <InfoCard label="total_freight_charge" value={`₹ ${trip.total_freight_charge || '0.00'}`} icon={Receipt} />
+            <InfoCard label="total_accessorial_charge" value={`₹ ${trip.total_accessorial_charge || '0.00'}`} icon={Plus} />
+            <InfoCard label="total_tax" value={`₹ ${trip.total_tax || '0.00'}`} icon={Shield} />
+          </div>
+
+          <div className="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm flex flex-col h-full overflow-hidden">
+            <SectionHeader icon={Clock} title="Payment Settlement" />
+            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-1">
+              <DataRow label="payment_received_amount" value={`₹ ${trip.payment_received_amount || '0.00'}`} icon={DollarSign} />
+              <DataRow label="payment_received_date" value={trip.payment_received_date ? formatDate(trip.payment_received_date) : null} icon={Calendar} />
+              <DataRow label="pod_received_date" value={trip.pod_received_date ? formatDate(trip.pod_received_date) : null} icon={FileText} />
+              <DataRow label="pod_turnaround_days" value={`${trip.pod_turnaround_days || '—'} Days`} icon={Clock} />
+              <DataRow label="is_billed" value={trip.is_billed ? 'Yes' : 'No'} icon={CheckCircle2} />
+              <DataRow label="is_paid" value={trip.is_paid ? 'Yes' : 'No'} icon={CheckCircle2} />
             </div>
-          ))}
-          {((expenses || []).length + (charges || []).length) === 0 && (
+          </div>
+
+          <div className="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm">
+            <SectionHeader icon={Receipt} title="Expense & Charge Records" />
+            {expensesError && (
+              <p className="mb-3 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-4 py-2">
+                Trip expenses could not be loaded from Finance. Charges below are still from this trip.
+              </p>
+            )}
+            {(isLoadingExp || isLoadingChg) ? (
+              <div className="flex justify-center p-8"><Loader2 className="animate-spin text-blue-600" /></div>
+            ) : (
+              <div className="max-h-[400px] overflow-y-auto pr-2 custom-scrollbar space-y-3">
+                {[...(expenses || []).map(e => ({
+                  ...e,
+                  res_type: 'EXPENSE',
+                  label: e.expense_type_name || e.expense_type_code || e.description || e.expense_number || 'Expense',
+                })), ...(charges || []).map(c => ({ ...c, res_type: 'CHARGE', label: c.charge_type }))].map((item) => (
+                  <div key={item.id} className="flex items-center justify-between p-4 rounded-2xl border border-gray-50 hover:bg-gray-50 transition-all">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${item.res_type === 'EXPENSE' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
+                        {item.res_type === 'EXPENSE' ? <Receipt size={18} /> : <Plus size={18} />}
+                      </div>
+                      <div>
+                        <p className="text-sm font-black text-[#172B4D] uppercase tracking-tight">{item.label || item.res_type}</p>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{item.res_type} • {item.status || 'PENDING'}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-6">
+                      <p className="text-lg font-black text-[#172B4D] tracking-tighter">₹ {item.amount || '0.00'}</p>
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => onEditFinance(item)} className="p-2 rounded-lg bg-gray-50 text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-all">
+                          <Edit3 size={14} />
+                        </button>
+                        <button type="button" onClick={() => onDeleteFinance(item)} className="p-2 rounded-lg bg-gray-50 text-gray-500 hover:text-red-600 hover:bg-red-50 transition-all">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {((expenses || []).length + (charges || []).length) === 0 && (
+                  <div className="text-center p-12 text-sm text-gray-400 font-bold uppercase tracking-widest bg-gray-50/50 rounded-2xl border border-dashed border-gray-200">
+                    No expense or charge records found.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeFinanceTab === 'lr-finance' && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-gray-100 bg-white p-5">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">LR-specific finance</p>
+              {hasLrData && (
+                <LRTabStrip
+                  linkedOrders={linkedOrders}
+                  activeOrderId={activeOrderTab}
+                  onChange={setActiveOrderTab}
+                  maxVisible={5}
+                  className="justify-end"
+                />
+              )}
+            </div>
+          </div>
+          {!hasLrData ? (
             <div className="text-center p-12 text-sm text-gray-400 font-bold uppercase tracking-widest bg-gray-50/50 rounded-2xl border border-dashed border-gray-200">
-                No expense or charge records found.
+              No LR linked to this trip.
+            </div>
+          ) : (
+            <div className="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm">
+              <SectionHeader icon={Receipt} title={`LR Finance${activeLrRow?.lr_number ? ` · ${activeLrRow.lr_number}` : ''}`} />
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+                <InfoCard label="freight_charges (LR booking)" value={`₹ ${activeLrOrder?.freight_charges || '0.00'}`} icon={DollarSign} accent />
+                <InfoCard label="consignment_value" value={`₹ ${activeLrOrder?.consignment_value || '0.00'}`} icon={PackageIcon} />
+                <InfoCard label="advance_received" value={`₹ ${activeLrOrder?.advance_received || '0.00'}`} icon={CreditCard} />
+              </div>
+              {activeLrFinance ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="space-y-1">
+                    <DataRow label="freight_charge" value={`₹ ${activeLrFinance.freight_charge || '0.00'}`} icon={DollarSign} />
+                    <DataRow label="accessorial_charge" value={`₹ ${activeLrFinance.accessorial_charge || '0.00'}`} icon={Plus} />
+                    <DataRow label="tax" value={`₹ ${activeLrFinance.tax || '0.00'}`} icon={Shield} />
+                    <DataRow label="bill_amount" value={`₹ ${activeLrFinance.bill_amount || '0.00'}`} icon={Receipt} />
+                  </div>
+                  <div className="space-y-1">
+                    <DataRow label="payment_received_amount" value={`₹ ${activeLrFinance.payment_received_amount || '0.00'}`} icon={DollarSign} />
+                    <DataRow label="pod_received_date" value={activeLrFinance.pod_received_date ? formatDate(activeLrFinance.pod_received_date) : null} icon={Calendar} />
+                    <DataRow label="payment_received_date" value={activeLrFinance.payment_received_date ? formatDate(activeLrFinance.payment_received_date) : null} icon={Calendar} />
+                    <DataRow label="is_billed" value={activeLrFinance.is_billed ? 'Yes' : 'No'} icon={CheckCircle2} />
+                    <DataRow label="is_paid" value={activeLrFinance.is_paid ? 'Yes' : 'No'} icon={CheckCircle2} />
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">No billing record for this LR yet.</p>
+              )}
+              {!isHiredCarrier && (
+                <p className="mt-4 text-xs text-gray-500 italic">Own fleet — no carrier hire cost for this LR.</p>
+              )}
             </div>
           )}
         </div>
       )}
-    </div>
-  </div>
-);
 
-const CargoTab = ({ tripId, onOpenCreate }) => {
+      {activeFinanceTab === 'owner-carrier' && isHiredCarrier && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm flex flex-col h-full overflow-hidden">
+            <SectionHeader icon={CreditCard} title={`Owner / Carrier Hire${activeLrRow?.lr_number ? ` · ${activeLrRow.lr_number}` : ''}`} />
+            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-1">
+              <DataRow label="booked_price" value={`₹ ${activeLrFinance?.booked_price ?? trip.booked_price ?? '0.00'}`} icon={DollarSign} />
+              <DataRow label="tds_percentage" value={`${activeLrFinance?.tds_percentage ?? trip.tds_percentage ?? '0.00'} %`} icon={Activity} />
+              <DataRow label="tds_amount" value={`₹ ${activeLrFinance?.tds_amount ?? trip.tds_amount ?? '0.00'}`} icon={DollarSign} />
+              <DataRow label="broker_commission" value={`₹ ${activeLrFinance?.broker_commission ?? trip.broker_commission ?? '0.00'}`} icon={DollarSign} />
+              <DataRow label="net_payable" value={`₹ ${activeLrFinance?.net_payable ?? '0.00'}`} icon={DollarSign} />
+            </div>
+          </div>
+          <div className="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm flex flex-col h-full overflow-hidden">
+            <SectionHeader icon={AlertCircle} title="Adjustments" />
+            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-1">
+              <DataRow label="incentive_amount" value={`₹ ${trip.incentive_amount || '0.00'}`} icon={Plus} />
+              <DataRow label="late_fee" value={`₹ ${trip.late_fee || '0.00'}`} icon={AlertCircle} />
+              <DataRow label="part_load_charge" value={`₹ ${trip.part_load_charge || '0.00'}`} icon={PackageIcon} />
+              <DataRow label="damage_amount" value={`₹ ${trip.damage_amount || '0.00'} (${trip.damage_count || 0} items)`} icon={AlertCircle} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const CargoTab = ({ tripId, tripStatus, onOpenCreate }) => {
   const { data, isLoading } = useTripCargoItems(tripId, { ordering: '-created_at' });
-  const transitionCargo = useTransitionCargoStatus();
   const rows = data?.results || (Array.isArray(data) ? data : []);
-  const transitions = {
-    PENDING: ['LOADED'],
-    LOADED: ['UNLOADED', 'DAMAGED', 'SHORT'],
-    UNLOADED: ['DAMAGED'],
-    DAMAGED: [],
-    SHORT: [],
-  };
+  const canAddCargo = !['COMPLETED', 'CANCELLED'].includes(tripStatus);
 
   return (
     <div className="space-y-4">
@@ -955,9 +1063,11 @@ const CargoTab = ({ tripId, onOpenCreate }) => {
         icon={PackageIcon}
         title="Trip Cargo"
         action={
-          <button type="button" onClick={onOpenCreate} className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold">
-            Add Cargo Item
-          </button>
+          canAddCargo ? (
+            <button type="button" onClick={onOpenCreate} className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold">
+              Add Cargo Item
+            </button>
+          ) : null
         }
       />
       {isLoading ? (
@@ -972,20 +1082,10 @@ const CargoTab = ({ tripId, onOpenCreate }) => {
             <div key={item.id} className="p-3 border border-gray-100 rounded-xl flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold text-[#172B4D]">{item.item_code || item.id.slice(-8)} - {item.description}</p>
-                <p className="text-xs text-gray-500">{item.commodity_type || 'GENERAL'} | Qty {item.quantity} | {item.status}</p>
+                <p className="text-xs text-gray-500">{item.commodity_type || 'GENERAL'} | Qty {item.quantity}</p>
               </div>
               <div className="flex gap-2">
                 <a href={`/tenant/dashboard/orders/cargo/${item.id}`} className="px-2 py-1 text-xs rounded bg-slate-100 text-slate-700">View</a>
-                {(transitions[item.status] || []).map((status) => (
-                  <button
-                    key={status}
-                    type="button"
-                    onClick={() => transitionCargo.mutate({ id: item.id, newStatus: status })}
-                    className="px-2 py-1 text-xs rounded bg-blue-50 text-blue-700"
-                  >
-                    Move to {status}
-                  </button>
-                ))}
               </div>
             </div>
           ))}
@@ -1018,7 +1118,7 @@ const HistoryTab = ({ history, isLoading }) => {
                 <div className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm flex justify-between items-center transition-all hover:border-[#4a6cf7]/30 hover:shadow-md relative cursor-pointer">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[11px] font-black text-gray-400 uppercase tracking-widest leading-none">{new Date(h.created_at || h.changed_at).toLocaleString()}</span>
+                      <span className="text-[11px] font-black text-gray-400 uppercase tracking-widest leading-none">{formatDateTime(h.created_at || h.changed_at)}</span>
                       <Badge className="bg-blue-50 text-blue-600 border-blue-100 font-bold">{h.status}</Badge>
                     </div>
                     <p className="text-sm font-black text-[#172B4D] leading-tight">{h.remarks || h.notes || `Status transitioned to ${h.status}`}</p>
@@ -1037,7 +1137,7 @@ const HistoryTab = ({ history, isLoading }) => {
                           <DetailItem label="Changed At" value={new Date(h.changed_at).toLocaleTimeString()} />
                           <DetailItem label="Latitude" value={h.latitude} />
                           <DetailItem label="Longitude" value={h.longitude} />
-                          <DetailItem label="Created At" value={new Date(h.created_at).toLocaleString()} />
+                          <DetailItem label="Created At" value={formatDateTime(h.created_at)} />
                           <DetailItem label="Changed By ID" value={h.changed_by} />
                           <div className="col-span-2 border-t border-gray-50 pt-3">
                              <DetailItem label="Remarks" value={h.remarks || '—'} />
@@ -1066,7 +1166,11 @@ export default function TripDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState(() => searchParams.get('view') || 'overview');
+  useEffect(() => {
+    const view = searchParams.get('view');
+    if (view) setActiveTab(view);
+  }, [searchParams]);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isCreateCargoOpen, setIsCreateCargoOpen] = useState(false);
   const [editFinanceItem, setEditFinanceItem] = useState(null);
@@ -1153,7 +1257,10 @@ export default function TripDetail() {
 
   const { data: order } = useOrderDetail(activeOrderTab || trip?.order_id);
   const { data: stops, isLoading: loadingStops } = useTripStops(id, stopQueryParams);
-  const { data: expenses, isLoading: loadingExp } = useTripExpenses(id);
+  const { data: expenses, isLoading: loadingExp, isError: expensesError } = useTripExpenses(id, {
+    enabled: activeTab === 'finance',
+    suppressErrorToast: true,
+  });
   const { data: charges, isLoading: loadingChg } = useTripCharges(id);
   const { data: docs } = useTripDocuments(id);
   const { data: history, isLoading: loadingHistory } = useTripStatusHistory(id, stopQueryParams);
@@ -1468,7 +1575,7 @@ export default function TripDetail() {
                     <p className="text-base font-black text-emerald-700 leading-none mb-1 tracking-tight truncate">
                         ₹{trip.total_bill_amount || '0.00'}
                     </p>
-                    <p className="text-[10px] font-bold text-emerald-600/60 italic">Not billed yet</p>
+                    <p className="text-[10px] font-bold text-emerald-600/60 italic">{trip.is_billed ? 'Billed' : 'Not billed yet'}</p>
                 </div>
             </div>
           </div>
@@ -1511,8 +1618,8 @@ export default function TripDetail() {
                 />
               </div>
             )}
-            {activeTab === 'finance' && <div className="space-y-3"><ScopeBadge variant="trip" /><FinanceTab trip={trip} expenses={expenses} charges={charges} isLoadingExp={loadingExp} isLoadingChg={loadingChg} onEditFinance={handleEditFinance} onDeleteFinance={handleDeleteFinance} /></div>}
-            {activeTab === 'cargo' && <div className="space-y-3"><ScopeBadge variant="trip" /><CargoTab tripId={id} onOpenCreate={() => setIsCreateCargoOpen(true)} /></div>}
+            {activeTab === 'finance' && <div className="space-y-3"><ScopeBadge variant="trip" /><FinanceTab trip={trip} expenses={expenses} charges={charges} isLoadingExp={loadingExp} isLoadingChg={loadingChg} expensesError={expensesError} onEditFinance={handleEditFinance} onDeleteFinance={handleDeleteFinance} linkedOrders={linkedOrders} lrRows={lrRows} activeOrderTab={activeOrderTab} setActiveOrderTab={setActiveOrderTab} /></div>}
+            {activeTab === 'cargo' && <div className="space-y-3"><ScopeBadge variant="trip" /><CargoTab tripId={id} tripStatus={trip?.status} onOpenCreate={() => setIsCreateCargoOpen(true)} /></div>}
             {activeTab === 'stops' && (
               <div className="space-y-3">
                 <ScopeBadge variant="lr" />

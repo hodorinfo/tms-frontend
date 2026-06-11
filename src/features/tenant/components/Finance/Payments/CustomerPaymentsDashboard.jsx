@@ -14,6 +14,7 @@ import {
   useVerifyCustomerPayment,
 } from '../../../queries/finance/financeQuery'
 import { useCustomers } from '../../../queries/customers/customersQuery'
+import { formatDate, formatDateTime, formatDateShort, toInputDate } from '@/utils/dateFormat';
 
 const asList = (data) => data?.results || (Array.isArray(data) ? data : [])
 
@@ -113,7 +114,7 @@ export default function CustomerPaymentsDashboard() {
               return <span className="font-bold text-[#0052CC]">{inv?.invoice_number || iid?.split('-')[0]}</span>
             }
           },
-          { key: 'payment_date', title: 'Date', render: (d) => d ? new Date(d).toLocaleDateString() : '-' },
+          { key: 'payment_date', title: 'Date', render: (d) => d ? formatDate(d) : '-' },
           { key: 'amount', title: 'Amount', render: (v) => <span className="font-black text-emerald-600">₹{parseFloat(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span> },
           { key: 'payment_mode', title: 'Mode', render: (v) => <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-gray-100 text-gray-600 uppercase">{v?.replace('_', ' ')}</span> },
           { key: 'status', title: 'Status' },

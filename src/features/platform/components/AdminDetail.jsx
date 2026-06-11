@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Search, RotateCcw, Plus, Eye, ShieldAlert, Trash2, Edit, X, User, Mail, Lock, Phone, CheckCircle2 } from 'lucide-react';
 import { useAdmins, useDeleteAdmin, useUpdateAdmin, useCreateAdmin } from '../queries/adminsQuery';
+import { formatDate, formatDateTime, formatDateShort, toInputDate } from '@/utils/dateFormat';
 
 const AdminDetail = () => {
   const { data: adminsData, isLoading, isError, error } = useAdmins(1);
@@ -212,7 +213,7 @@ const AdminDetail = () => {
                       <span className="bg-blue-50 text-[#0052CC] text-[10px] font-bold px-2 py-1 rounded border border-blue-100">SUPER ADMIN</span>
                     </td>
                     <td className="px-6 py-4 text-gray-500 font-medium">{admin.email}</td>
-                    <td className="px-6 py-4 text-gray-400 font-medium">{admin.created_at ? new Date(admin.created_at).toLocaleDateString() : 'Never'}</td>
+                    <td className="px-6 py-4 text-gray-400 font-medium">{admin.created_at ? formatDate(admin.created_at) : 'Never'}</td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex gap-2 justify-end">
                         <button

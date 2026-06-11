@@ -20,6 +20,7 @@ import { User, Car, Calendar, FileText, CheckSquare, Clock } from 'lucide-react'
 import StatusBadge from '../../common/StatusBadge';
 import { getInitials } from '../../common/utils';
 import DriverSelect from '../../common/DriverSelect';
+import { formatDateTime } from '@/utils/dateFormat';
 
 
 // Vehicle Select for assignments - Displays registration, make and model
@@ -415,7 +416,7 @@ export const ViewAssignmentModal = ({ record, driverName, employeeId, onClose, u
             <LabelValue label="assigned_by" value={assignedBy} />
             <LabelValue 
               label="record_created_at" 
-              value={record.created_at ? new Date(record.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }).replace(',', '') : '—'} 
+              value={record.created_at ? formatDateTime(record.created_at) : '—'} 
             />
           </div>
 

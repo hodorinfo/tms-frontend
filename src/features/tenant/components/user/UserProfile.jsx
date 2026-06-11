@@ -7,6 +7,7 @@ import { useRevokeSession } from '../../queries/users/sessionsQuery';
 import { useAssignRoles, useUserSessions, useUserActivityLog, useUserRoles, useRemoveUserRole, useUserPermissions } from '../../queries/users/userActionQuery';
 import { useReportingManagers } from '../../queries/users/reportingManagerQuery';
 import { X, User, Mail, Phone, Calendar, UserCircle2, ShieldAlert, Trash2, Users, ChevronDown, ChevronUp, Check, Monitor, Smartphone, History, Activity, ShieldCheck, Lock, Key, Layout, Settings } from 'lucide-react';
+import { formatDate, formatDateTime, formatDateShort, toInputDate } from '@/utils/dateFormat';
 
 const UserProfile = () => {
   const { userid } = useParams();
@@ -802,7 +803,7 @@ const UserProfile = () => {
                           <td className="whitespace-nowrap">
                             <div className="flex flex-col">
                               <span className="font-medium text-gray-900">
-                                {new Date(session.login_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                {formatDateShort(session.login_at)}
                               </span>
                               <span className="text-[10px] text-gray-400">
                                 {new Date(session.login_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
@@ -899,7 +900,7 @@ const UserProfile = () => {
                                 </div>
                                 <div className="whitespace-nowrap text-right text-xs text-gray-400">
                                   <time dateTime={activity.created_at}>
-                                    {new Date(activity.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                    {formatDateShort(activity.created_at)}
                                   </time>
                                 </div>
                               </div>

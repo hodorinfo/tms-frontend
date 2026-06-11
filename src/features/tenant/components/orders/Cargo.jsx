@@ -23,22 +23,11 @@ const CARGO_TYPE_COLORS = {
   GENERAL: 'bg-blue-100 text-blue-700 border-blue-200',
 };
 
-const CARGO_STATUS_COLORS = {
-  PENDING: 'bg-slate-50 text-slate-600 border-slate-200',
-  LOADED: 'bg-green-50 text-green-700 border-green-200',
-  UNLOADED: 'bg-blue-50 text-blue-700 border-blue-200',
-  DAMAGED: 'bg-red-50 text-red-700 border-red-200',
-  SHORT: 'bg-amber-50 text-amber-700 border-amber-200',
-};
-
-
-
 // --- Modal Component moved to CargoModals.jsx ---
 
 export default function CargoMainBody() {
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("All Types");
-  const [filterStatus, setFilterStatus] = useState("All Status");
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -49,7 +38,6 @@ export default function CargoMainBody() {
   const queryParams = { page, ordering: '-created_at' };
   if (search) queryParams.search = search;
   if (filterType !== 'All Types') queryParams.commodity_type = filterType;
-  if (filterStatus !== 'All Status') queryParams.status = filterStatus;
 
   const { data: cargoData, isLoading, refetch } = useCargoItems(queryParams);
   const cargoItems = cargoData?.results || [];
@@ -60,7 +48,7 @@ export default function CargoMainBody() {
     total: totalCount,
     hazardous: cargoItems.filter(c => c.commodity_type === 'HAZARDOUS').length,
     fragile: cargoItems.filter(c => c.commodity_type === 'FRAGILE').length,
-    loaded: cargoItems.filter(c => c.status === 'LOADED').length,
+    linkedTrips: cargoItems.filter(c => !!c.trip).length,
   };
 
   return (
@@ -114,8 +102,8 @@ export default function CargoMainBody() {
                   <span className="text-[18px] font-black text-amber-600">{stats.fragile}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[13px] font-bold text-gray-500 uppercase tracking-wider">Loaded Items:</span>
-                  <span className="text-[18px] font-black text-green-600">{stats.loaded}</span>
+                  <span className="text-[13px] font-bold text-gray-500 uppercase tracking-wider">Linked Trips:</span>
+                  <span className="text-[18px] font-black text-green-600">{stats.linkedTrips}</span>
                 </div>
               </>
             )}
@@ -148,21 +136,6 @@ export default function CargoMainBody() {
                  <option>PERISHABLE</option>
                  <option>HIGH_VALUE</option>
                  <option>OTHER</option>
-               </select>
-               <select
-                 className="flex-1 md:w-40 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 outline-none focus:border-[#4a6cf7]"
-                 value={filterStatus}
-                 onChange={(e) => {
-                   setFilterStatus(e.target.value);
-                   setPage(1);
-                 }}
-               >
-                 <option>All Status</option>
-                 <option>PENDING</option>
-                 <option>LOADED</option>
-                 <option>UNLOADED</option>
-                 <option>DAMAGED</option>
-                 <option>SHORT</option>
                </select>
             </div>
             <div className="flex items-center gap-3">
@@ -203,10 +176,9 @@ export default function CargoMainBody() {
                   <tr>
                     <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Item / Code</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Specifications</th>
-                    <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Trip Link</th>
+                    <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Trip / LR Link</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Allocated Stops</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Category</th>
-                    <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Status</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right">Actions</th>
                   </tr>
                 </thead>
@@ -237,20 +209,32 @@ export default function CargoMainBody() {
                         </div>
                       </td>
                       <td className="px-6 py-5">
-                        {item.trip ? (
-                          <button
-                            type="button"
-                            onClick={() => navigate(`/tenant/dashboard/orders/trips/${item.trip}`)}
-                            className="inline-flex items-center gap-2 px-2.5 py-1 bg-gray-100 rounded-md text-[11px] font-bold text-gray-600 uppercase tracking-tight hover:bg-blue-50 hover:text-blue-700"
-                            title={item.trip}
-                          >
-                            <Move size={12} /> {item.trip_number || String(item.trip).slice(-8)}
-                          </button>
-                        ) : (
-                          <div className="inline-flex items-center gap-2 px-2.5 py-1 bg-gray-100 rounded-md text-[11px] font-bold text-gray-600 uppercase tracking-tight">
-                            <Move size={12} /> Unassigned
-                          </div>
-                        )}
+                        <div className="flex flex-col gap-1">
+                          {item.trip ? (
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/tenant/dashboard/orders/trips/${item.trip}`)}
+                              className="inline-flex items-center gap-2 px-2.5 py-1 bg-gray-100 rounded-md text-[11px] font-bold text-gray-600 uppercase tracking-tight hover:bg-blue-50 hover:text-blue-700"
+                              title={item.trip}
+                            >
+                              <Move size={12} /> {item.trip_number || String(item.trip).slice(-8)}
+                            </button>
+                          ) : (
+                            <div className="inline-flex items-center gap-2 px-2.5 py-1 bg-gray-100 rounded-md text-[11px] font-bold text-gray-600 uppercase tracking-tight">
+                              <Move size={12} /> Trip Unlinked
+                            </div>
+                          )}
+                          {item.order && (
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/tenant/dashboard/orders/${item.order}`)}
+                              className="inline-flex items-center gap-2 px-2.5 py-1 bg-blue-50 rounded-md text-[11px] font-bold text-blue-700 uppercase tracking-tight hover:bg-blue-100"
+                              title={item.order}
+                            >
+                              LR {item.order_lr_number || String(item.order).slice(-8)}
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-5">
                         {Array.isArray(item.stop_quantities) && item.stop_quantities.length > 0 ? (
@@ -269,11 +253,6 @@ export default function CargoMainBody() {
                       <td className="px-6 py-5">
                         <span className={`px-2.5 py-1 rounded border text-[10px] font-bold uppercase tracking-wider ${CARGO_TYPE_COLORS[item.commodity_type] || CARGO_TYPE_COLORS['GENERAL']}`}>
                           {item.commodity_type || 'GENERAL'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-5">
-                        <span className={`px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase tracking-tight ${CARGO_STATUS_COLORS[item.status] || CARGO_STATUS_COLORS.PENDING}`}>
-                          {item.status || 'PENDING'}
                         </span>
                       </td>
                       <td className="px-6 py-5 text-right">

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueries } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { X, Truck, User, MapPin, Calendar, FileText, Hash, Receipt, ArrowRight, Activity, DollarSign, Gauge, Clock, ShieldCheck, AlertCircle, Info, ChevronRight, Search, CheckCircle2, ChevronLeft, Save, Circle, GripVertical, Trash2, Package } from 'lucide-react';
 import {
@@ -11,13 +12,26 @@ import {
   useTripStops,
   useCreateTripStop,
   useTrips,
+  orderKeys,
 } from '../../queries/orders/ordersQuery';
 import { useDrivers } from '../../queries/drivers/driverCoreQuery';
 import { useVehicles } from '../../queries/vehicles/vehicleQuery';
 import { useVehicleTypes } from '../../queries/vehicles/vehicletypeQuery';
-import { tripsApi } from '../../api/orders/ordersEndpoint';
+import { tripsApi, ordersApi } from '../../api/orders/ordersEndpoint';
 import LRTabStrip from './trip/LRTabStrip';
 import ScopeBadge from './trip/ScopeBadge';
+import { formatDate, toInputDate } from '@/utils/dateFormat';
+
+/** Normalize API date values for &lt;input type="date"&gt; (yyyy-MM-dd). */
+const normalizeTripDateFields = (trip = {}) => ({
+  created_date: toInputDate(trip.created_date) || new Date().toISOString().split('T')[0],
+  scheduled_pickup_date: toInputDate(trip.scheduled_pickup_date) || null,
+  scheduled_delivery_date: toInputDate(trip.scheduled_delivery_date) || null,
+  actual_pickup_date: toInputDate(trip.actual_pickup_date) || null,
+  actual_delivery_date: toInputDate(trip.actual_delivery_date) || null,
+  payment_received_date: toInputDate(trip.payment_received_date) || null,
+  pod_received_date: toInputDate(trip.pod_received_date) || null,
+});
 
 const formatLabel = (str) => {
   if (!str) return "";
@@ -170,7 +184,7 @@ export function CreateTripModal({ isOpen, onClose, orderId, orderNumber }) {
     lr_number: "", reference_number: "", trip_type: "FTL", status: "CREATED",
     origin_address: "", destination_address: "", 
     scheduled_pickup_date: null, scheduled_delivery_date: null,
-    total_freight_charge: "0.00", total_accessorial_charge: "0.00", total_tax: "0.00",
+    total_freight_charge: "", total_accessorial_charge: "", total_tax: "",
     start_odometer_km: "", remarks: ""
   });
 
@@ -180,6 +194,8 @@ export function CreateTripModal({ isOpen, onClose, orderId, orderNumber }) {
     const firstOrder = selected[0];
     const lastOrder = selected[selected.length - 1] || firstOrder;
     const lrList = selected.map(o => o.lr_number).filter(Boolean).join(', ');
+    const pickup = firstOrder ? toInputDate(firstOrder.pickup_date) : null;
+    const delivery = lastOrder ? toInputDate(lastOrder.delivery_date) : null;
     setFormData(prev => ({
       ...prev,
       order_ids: selectedIds,
@@ -190,6 +206,8 @@ export function CreateTripModal({ isOpen, onClose, orderId, orderNumber }) {
       origin_address: firstOrder ? (firstOrder.consignor_address || prev.origin_address || '') : prev.origin_address,
       destination_address: lastOrder ? (lastOrder.consignee_address || prev.destination_address || '') : prev.destination_address,
       vehicle_type_code: firstOrder ? (firstOrder.vehicle_type_preference || prev.vehicle_type_code || '') : prev.vehicle_type_code,
+      scheduled_pickup_date: pickup || prev.scheduled_pickup_date || null,
+      scheduled_delivery_date: delivery || prev.scheduled_delivery_date || null,
     }));
   };
 
@@ -220,6 +238,12 @@ export function CreateTripModal({ isOpen, onClose, orderId, orderNumber }) {
       scheduled_pickup_date: formData.scheduled_pickup_date || null,
       scheduled_delivery_date: formData.scheduled_delivery_date || null,
     };
+    // Let backend defaults apply when finance fields are untouched.
+    ['total_freight_charge', 'total_accessorial_charge', 'total_tax'].forEach((key) => {
+      if (cleanData[key] === '' || cleanData[key] === null) {
+        delete cleanData[key];
+      }
+    });
     createTripMutation.mutate(cleanData, { 
       onSuccess: () => {
         onClose();
@@ -353,12 +377,37 @@ export function CreateTripModal({ isOpen, onClose, orderId, orderNumber }) {
         {/* SCHEDULE */}
         <div className="space-y-4">
            <SectionHeader icon={Calendar} title="Schedule" />
+           {selectedOrders.length > 0 && (
+             <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+               LR window: pickup {formatDate(selectedOrders[0]?.pickup_date)} · delivery {formatDate(selectedOrders[selectedOrders.length - 1]?.delivery_date)}
+             </p>
+           )}
            <div className="grid grid-cols-2 gap-4">
               <FieldGroup label="Scheduled pickup">
-                 <input type="date" className={inputClass} value={formData.scheduled_pickup_date || ""} onChange={e => setFormData({ ...formData, scheduled_pickup_date: e.target.value })} />
+                 <input
+                   type="date"
+                   className={inputClass}
+                   min={selectedOrders[0] ? toInputDate(selectedOrders[0].pickup_date) || undefined : undefined}
+                   max={selectedOrders[selectedOrders.length - 1] ? toInputDate(selectedOrders[selectedOrders.length - 1].delivery_date) || undefined : undefined}
+                   value={formData.scheduled_pickup_date || ""}
+                   onChange={e => setFormData({ ...formData, scheduled_pickup_date: e.target.value })}
+                 />
+                 {selectedOrders[0]?.pickup_date && (
+                   <p className="text-[10px] text-gray-500 mt-1">Earliest: {formatDate(selectedOrders[0].pickup_date)}</p>
+                 )}
               </FieldGroup>
               <FieldGroup label="Scheduled delivery">
-                 <input type="date" className={inputClass} value={formData.scheduled_delivery_date || ""} onChange={e => setFormData({ ...formData, scheduled_delivery_date: e.target.value })} />
+                 <input
+                   type="date"
+                   className={inputClass}
+                   min={formData.scheduled_pickup_date || (selectedOrders[0] ? toInputDate(selectedOrders[0].pickup_date) : undefined) || undefined}
+                   max={selectedOrders[selectedOrders.length - 1] ? toInputDate(selectedOrders[selectedOrders.length - 1].delivery_date) || undefined : undefined}
+                   value={formData.scheduled_delivery_date || ""}
+                   onChange={e => setFormData({ ...formData, scheduled_delivery_date: e.target.value })}
+                 />
+                 {selectedOrders[selectedOrders.length - 1]?.delivery_date && (
+                   <p className="text-[10px] text-gray-500 mt-1">Latest: {formatDate(selectedOrders[selectedOrders.length - 1].delivery_date)}</p>
+                 )}
               </FieldGroup>
            </div>
         </div>
@@ -426,11 +475,11 @@ export function EditTripModal({ isOpen, onClose, trip }) {
     start_time: null, end_time: null,
     total_distance_km: null, start_odometer_km: null, end_odometer_km: null,
     estimated_fuel_liters: null, actual_fuel_liters: null, fuel_rate_per_liter: null,
-    damage_count: 0, damage_amount: "0.00", pod_turnaround_days: null,
-    booked_price: null, total_freight_charge: "0.00", total_accessorial_charge: "0.00", total_tax: "0.00",
-    tds_percentage: "0.00", tds_amount: "0.00", incentive_amount: "0.00", late_fee: "0.00",
-    part_load_charge: "0.00", broker_commission: "0.00",
-    total_bill_amount: "0.00", payment_received_amount: "0.00", payment_received_date: null,
+    damage_count: 0, damage_amount: "", pod_turnaround_days: null,
+    booked_price: "", total_freight_charge: "", total_accessorial_charge: "", total_tax: "",
+    tds_percentage: "", tds_amount: "", incentive_amount: "", late_fee: "",
+    part_load_charge: "", broker_commission: "",
+    total_bill_amount: "", payment_received_amount: "", payment_received_date: null,
     pod_received_date: null, is_billed: false, is_paid: false,
     remarks: "", version: 1
   });
@@ -478,6 +527,30 @@ export function EditTripModal({ isOpen, onClose, trip }) {
       .map(id => orders.find(o => String(o.id) === String(id)) || { id, lr_number: 'Unknown LR', order_type: 'NA' })
       .filter(Boolean);
   }, [orders, formData.order_ids, formData.order_id]);
+  const financeOrderQueries = useQueries({
+    queries: linkedOrdersForTrip.map((order) => ({
+      queryKey: orderKeys.detail(order.id),
+      queryFn: () => ordersApi.get(order.id),
+      enabled: !!order?.id,
+      staleTime: 60_000,
+    })),
+  });
+  const financeOrderById = useMemo(
+    () =>
+      linkedOrdersForTrip.reduce((acc, order, index) => {
+        acc[String(order.id)] = financeOrderQueries[index]?.data || order;
+        return acc;
+      }, {}),
+    [linkedOrdersForTrip, financeOrderQueries]
+  );
+  const activeFinanceOrder = useMemo(
+    () =>
+      financeOrderById[String(activeRouteOrderId)] ||
+      financeOrderById[String(linkedOrdersForTrip[0]?.id)] ||
+      linkedOrdersForTrip[0] ||
+      null,
+    [financeOrderById, linkedOrdersForTrip, activeRouteOrderId]
+  );
 
   // Availability tracking for drivers and vehicles
   const { data: allTripsData } = useTrips({ page_size: 1000 });
@@ -513,14 +586,7 @@ export function EditTripModal({ isOpen, onClose, trip }) {
         ...formData,
         ...trip,
         order_ids: trip.order_ids?.length ? trip.order_ids : (trip.order_id ? [trip.order_id] : []),
-        // Ensure dates are formatted for input[type="date"]
-        created_date: trip.created_date || new Date().toISOString().split('T')[0],
-        scheduled_pickup_date: trip.scheduled_pickup_date || null,
-        scheduled_delivery_date: trip.scheduled_delivery_date || null,
-        actual_pickup_date: trip.actual_pickup_date || null,
-        actual_delivery_date: trip.actual_delivery_date || null,
-        payment_received_date: trip.payment_received_date || null,
-        pod_received_date: trip.pod_received_date || null,
+        ...normalizeTripDateFields(trip),
       };
       setFormData(data);
       setInitialFormData(data);
@@ -719,6 +785,34 @@ export function EditTripModal({ isOpen, onClose, trip }) {
         ...prev,
         [name]: type === 'checkbox' ? checked : value
       };
+      const parseMoney = (v) => {
+        const n = Number.parseFloat(v);
+        return Number.isFinite(n) ? n : 0;
+      };
+      const hasValue = (v) => v !== '' && v !== null && v !== undefined;
+      const deriveKeys = new Set([
+        'booked_price',
+        'tds_percentage',
+        'total_freight_charge',
+        'total_accessorial_charge',
+        'total_tax',
+      ]);
+      if (deriveKeys.has(name)) {
+        if (hasValue(next.booked_price) && hasValue(next.tds_percentage)) {
+          next.tds_amount = ((parseMoney(next.booked_price) * parseMoney(next.tds_percentage)) / 100).toFixed(2);
+        } else {
+          next.tds_amount = '';
+        }
+        if (hasValue(next.total_freight_charge) || hasValue(next.total_accessorial_charge) || hasValue(next.total_tax)) {
+          next.total_bill_amount = (
+            parseMoney(next.total_freight_charge) +
+            parseMoney(next.total_accessorial_charge) +
+            parseMoney(next.total_tax)
+          ).toFixed(2);
+        } else {
+          next.total_bill_amount = '';
+        }
+      }
       
       // Auto-fill vehicle details when primary_vehicle_id changes
       if (name === 'primary_vehicle_id' && value) {
@@ -1313,51 +1407,81 @@ export function EditTripModal({ isOpen, onClose, trip }) {
                 </div>
                 
                 <div className="max-w-4xl">
-                  <GroupHeader title="Primary Charges" />
-                  <MetricsRow label="booked_price" suffix="₹">
-                    <input type="number" name="booked_price" className={inputClass} value={formData.booked_price || ""} onChange={handleInputChange} placeholder="0.00" />
-                  </MetricsRow>
+                  {linkedOrdersForTrip.length > 0 && (
+                    <>
+                      <GroupHeader title="LR Specific (Read-only)" />
+                      <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3 mb-4">
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">lr finance scope</span>
+                          <LRTabStrip
+                            linkedOrders={linkedOrdersForTrip.map((o) => ({ order_id: o.id, lr_number: o.lr_number }))}
+                            activeOrderId={activeRouteOrderId}
+                            onChange={setActiveRouteOrderId}
+                            maxVisible={5}
+                          />
+                        </div>
+                        <div className="grid grid-cols-3 gap-3 text-xs">
+                          <div className="rounded-lg border border-amber-100 bg-amber-50 p-2">
+                            <p className="font-black text-amber-800 uppercase tracking-wider">Freight (LR)</p>
+                            <p className="mt-1 text-gray-700">₹ {activeFinanceOrder?.freight_charges || '0.00'}</p>
+                          </div>
+                          <div className="rounded-lg border border-amber-100 bg-amber-50 p-2">
+                            <p className="font-black text-amber-800 uppercase tracking-wider">Consignment Value</p>
+                            <p className="mt-1 text-gray-700">₹ {activeFinanceOrder?.consignment_value || '0.00'}</p>
+                          </div>
+                          <div className="rounded-lg border border-amber-100 bg-amber-50 p-2">
+                            <p className="font-black text-amber-800 uppercase tracking-wider">Advance Received</p>
+                            <p className="mt-1 text-gray-700">₹ {activeFinanceOrder?.advance_received || '0.00'}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                  <GroupHeader title="Customer Billing" />
                   <MetricsRow label="total_freight_charge" suffix="₹">
                     <input type="number" name="total_freight_charge" className={inputClass} value={formData.total_freight_charge || ""} onChange={handleInputChange} placeholder="0.00" />
                   </MetricsRow>
                   <MetricsRow label="total_accessorial_charge" suffix="₹">
                     <input type="number" name="total_accessorial_charge" className={inputClass} value={formData.total_accessorial_charge || ""} onChange={handleInputChange} placeholder="0.00" />
                   </MetricsRow>
-
-                  <GroupHeader title="Taxes & TDS" />
                   <MetricsRow label="total_tax" suffix="₹">
                     <input type="number" name="total_tax" className={inputClass} value={formData.total_tax || ""} onChange={handleInputChange} placeholder="0.00" />
+                  </MetricsRow>
+                  <MetricsRow label="total_bill_amount" suffix="₹">
+                    <input type="number" name="total_bill_amount" className={`${inputClass} !bg-blue-50/30 text-blue-700 font-black`} value={formData.total_bill_amount || ""} onChange={handleInputChange} placeholder="Auto" readOnly />
+                  </MetricsRow>
+
+                  <GroupHeader title="Owner / Carrier Hire" />
+                  <MetricsRow label="booked_price" suffix="₹">
+                    <input type="number" name="booked_price" className={inputClass} value={formData.booked_price || ""} onChange={handleInputChange} placeholder="0.00" />
                   </MetricsRow>
                   <MetricsRow label="tds" suffix="%">
                     <input type="number" name="tds_percentage" className={inputClass} value={formData.tds_percentage || ""} onChange={handleInputChange} placeholder="0.00" />
                   </MetricsRow>
                   <MetricsRow label="tds_amount" suffix="₹">
-                    <input type="number" name="tds_amount" className={inputClass} value={formData.tds_amount || ""} onChange={handleInputChange} placeholder="0.00" />
+                    <input type="number" name="tds_amount" className={`${inputClass} !bg-gray-50/70 text-gray-500`} value={formData.tds_amount || ""} onChange={handleInputChange} placeholder="Auto" readOnly />
+                  </MetricsRow>
+                  <MetricsRow label="broker_commission" suffix="₹">
+                    <input type="number" name="broker_commission" className={inputClass} value={formData.broker_commission || ""} onChange={handleInputChange} placeholder="0.00" />
                   </MetricsRow>
 
                   <GroupHeader title="Adjustments" />
                   <MetricsRow label="incentive_amount" suffix="₹">
-                    <input type="number" name="incentive_amount" className={inputClass} value={formData.incentive_amount || ""} onChange={handleInputChange} />
+                    <input type="number" name="incentive_amount" className={inputClass} value={formData.incentive_amount || ""} onChange={handleInputChange} placeholder="0.00" />
                   </MetricsRow>
                   <MetricsRow label="late_fee" suffix="₹">
-                    <input type="number" name="late_fee" className={inputClass} value={formData.late_fee || ""} onChange={handleInputChange} />
+                    <input type="number" name="late_fee" className={inputClass} value={formData.late_fee || ""} onChange={handleInputChange} placeholder="0.00" />
                   </MetricsRow>
                   <MetricsRow label="part_load_charge" suffix="₹">
-                    <input type="number" name="part_load_charge" className={inputClass} value={formData.part_load_charge || ""} onChange={handleInputChange} />
+                    <input type="number" name="part_load_charge" className={inputClass} value={formData.part_load_charge || ""} onChange={handleInputChange} placeholder="0.00" />
                   </MetricsRow>
                   <MetricsRow label="damage_amount" suffix="₹">
-                    <input type="number" name="damage_amount" className={inputClass} value={formData.damage_amount || ""} onChange={handleInputChange} />
+                    <input type="number" name="damage_amount" className={inputClass} value={formData.damage_amount || ""} onChange={handleInputChange} placeholder="0.00" />
                   </MetricsRow>
 
-                  <GroupHeader title="Final Settlement" />
-                  <MetricsRow label="broker_commission" suffix="₹">
-                    <input type="number" name="broker_commission" className={inputClass} value={formData.broker_commission || ""} onChange={handleInputChange} />
-                  </MetricsRow>
-                  <MetricsRow label="total_bill_amount" suffix="₹">
-                    <input type="number" name="total_bill_amount" className={`${inputClass} !bg-blue-50/30 text-blue-700 font-black`} value={formData.total_bill_amount || ""} onChange={handleInputChange} />
-                  </MetricsRow>
+                  <GroupHeader title="Settlement Status" />
                   <MetricsRow label="payment_received_amount" suffix="₹">
-                    <input type="number" name="payment_received_amount" className={inputClass} value={formData.payment_received_amount || ""} onChange={handleInputChange} />
+                    <input type="number" name="payment_received_amount" className={inputClass} value={formData.payment_received_amount || ""} onChange={handleInputChange} placeholder="0.00" />
                   </MetricsRow>
 
                   <div className="h-4" />
@@ -1550,10 +1674,10 @@ export function ViewTripModal({ isOpen, onClose, tripId }) {
                 <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
                    <SectionHeader icon={Calendar} title="Timing ledger" />
                    <div className="grid grid-cols-2 gap-y-6 gap-x-4">
-                      <div><p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Sch. Pickup</p><p className="font-bold text-gray-800 text-sm">{trip.scheduled_pickup_date || '-'}</p></div>
-                      <div><p className="text-xs font-bold text-[#4a6cf7] uppercase tracking-widest">Act. Pickup</p><p className="font-bold text-[#4a6cf7] text-sm">{trip.actual_pickup_date || '-'}</p></div>
-                      <div><p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Sch. Delivery</p><p className="font-bold text-gray-800 text-sm">{trip.scheduled_delivery_date || '-'}</p></div>
-                      <div><p className="text-xs font-bold text-emerald-600 uppercase tracking-widest">Act. Delivery</p><p className="font-bold text-emerald-600 text-sm">{trip.actual_delivery_date || '-'}</p></div>
+                      <div><p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Sch. Pickup</p><p className="font-bold text-gray-800 text-sm">{trip.scheduled_pickup_date ? formatDate(trip.scheduled_pickup_date) : '-'}</p></div>
+                      <div><p className="text-xs font-bold text-[#4a6cf7] uppercase tracking-widest">Act. Pickup</p><p className="font-bold text-[#4a6cf7] text-sm">{trip.actual_pickup_date ? formatDate(trip.actual_pickup_date) : '-'}</p></div>
+                      <div><p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Sch. Delivery</p><p className="font-bold text-gray-800 text-sm">{trip.scheduled_delivery_date ? formatDate(trip.scheduled_delivery_date) : '-'}</p></div>
+                      <div><p className="text-xs font-bold text-emerald-600 uppercase tracking-widest">Act. Delivery</p><p className="font-bold text-emerald-600 text-sm">{trip.actual_delivery_date ? formatDate(trip.actual_delivery_date) : '-'}</p></div>
                    </div>
                 </div>
              </div>

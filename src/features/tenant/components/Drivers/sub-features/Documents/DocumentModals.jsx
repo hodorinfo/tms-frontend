@@ -17,6 +17,7 @@ import { useCurrentUser } from '../../../../queries/users/userActionQuery';
 import DriverSelect from '../../common/DriverSelect';
 import { DOCUMENT_TYPES, VERIFICATION_STATUS as VERIFICATION_LIST, STATUS_STYLES as VERIFICATION_STYLES } from '../../common/constants';
 import { getExpiryColor, getInitials } from '../../common/utils';
+import { formatDate, formatDateTime, formatDateShort, toInputDate } from '@/utils/dateFormat';
 
 // Shared Form Fields for Documents
 const DocumentFormFields = ({ form, setForm, fieldErrors, setFieldErrors, error, userMap = {}, onStatusChange, currentUser, isLoadingUsers }) => {
@@ -107,7 +108,7 @@ const DocumentFormFields = ({ form, setForm, fieldErrors, setFieldErrors, error,
               {isLoadingUsers && !form.verified_at ? (
                 <div className="h-3 bg-blue-200/50 rounded animate-pulse w-32 mt-0.5" />
               ) : (
-                form.verified_at ? new Date(form.verified_at).toLocaleString() : '—'
+                form.verified_at ? formatDateTime(form.verified_at) : '—'
               )}
             </div>
           </div>
@@ -356,7 +357,7 @@ export const ViewDocumentModal = ({ doc, onClose, userMap = {}, driverMap = {} }
         </a>
       ) : (
         <span className={`text-[13px] font-medium text-[#172B4D] ${color || ''}`}>
-          {isDate && value ? new Date(value).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : (value || '—')}
+          {isDate && value ? formatDateShort(value) : (value || '—')}
         </span>
       )}
     </div>
@@ -438,10 +439,7 @@ export const ViewDocumentModal = ({ doc, onClose, userMap = {}, driverMap = {} }
           <LabelValue label="File Attachment" value={doc.file_url} isLink />
           <LabelValue 
             label="Record Created At" 
-            value={doc.created_at ? new Date(doc.created_at).toLocaleString('en-GB', { 
-              day: '2-digit', month: 'short', year: 'numeric', 
-              hour: '2-digit', minute: '2-digit', hour12: true 
-            }) : '—'} 
+            value={doc.created_at ? formatDateTime(doc.created_at) : '—'} 
           />
         </div>
 

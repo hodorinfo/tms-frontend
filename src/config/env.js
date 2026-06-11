@@ -1,1 +1,1 @@
-export const API_BASE_URL = "http://192.168.1.34";
+export { API_BASE_URL } from './apiConfig';

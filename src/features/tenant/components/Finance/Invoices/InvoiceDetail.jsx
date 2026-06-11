@@ -121,6 +121,7 @@ export default function InvoiceDetail() {
                 <div><span className="text-gray-500">Total:</span> {money(invoice.total_amount)}</div>
                 <div><span className="text-gray-500">Amount Due:</span> {money(invoice.amount_due)}</div>
                 <div><span className="text-gray-500">Amount Paid:</span> {money(invoice.amount_paid)}</div>
+                <div><span className="text-gray-500">Advance Adjusted:</span> {money(invoice.advance_adjustment)}</div>
                 <div><span className="text-gray-500">Tax:</span> {money(invoice.tax_amount)}</div>
               </div>
 
@@ -157,7 +158,7 @@ export default function InvoiceDetail() {
                       {lineItems.map((item) => (
                         <div key={item.id} className="border border-gray-100 rounded-lg p-3 text-xs space-y-1">
                           <p className="font-bold text-[#172B4D]">{item.description || item.lr_number || 'Line item'}</p>
-                          <p className="text-gray-500">LR: {item.lr_number || '-'} | Trip: {item.trip_id || '-'}</p>
+                          <p className="text-gray-500">LR: {item.lr_number || '-'} | Order: {item.order_id || '-'} | Trip: {item.trip_id || '-'}</p>
                           <p>Freight: {money(item.freight_amount)} | Detention: {money(item.detention_amount)} | Unloading: {money(item.unloading_amount)}</p>
                           <p>Incentive: {money(item.incentive_amount)} | Damage: {money(item.damage_deduction)} | Tax: {money(item.tax_amount)}</p>
                           <p className="font-semibold text-gray-800">Line total: {money(item.line_total)}</p>

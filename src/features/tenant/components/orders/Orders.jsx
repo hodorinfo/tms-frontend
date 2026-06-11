@@ -1,16 +1,18 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Plus, Search, Download, XCircle, Truck,
   Package, CheckCircle2, Clock, RefreshCcw, Eye
 } from 'lucide-react';
 import {
-  useOrders
+  useOrders,
+  useTrips,
 } from '../../queries/orders/ordersQuery';
 import { useCustomers } from '../../queries/customers/customersQuery';
 import {
   CreateOrderModal
 } from './OrderModals';
+import { formatDate } from '@/utils/dateFormat';
 
 // --- Configuration & Helpers ---
 const STATUS_CONFIG = {
@@ -79,6 +81,26 @@ export default function Orders() {
   const { data: ordersData, isLoading, refetch } = useOrders(queryParams);
   const orders = ordersData?.results || [];
   const totalCount = ordersData?.count || 0;
+  const { data: tripsData } = useTrips({ page_size: 1000, ordering: '-created_at' });
+  const trips = tripsData?.results || (Array.isArray(tripsData) ? tripsData : []);
+
+  const tripMetaByOrderId = useMemo(() => {
+    const map = {};
+    trips.forEach((trip) => {
+      const linked = Array.isArray(trip.linked_orders) && trip.linked_orders.length
+        ? trip.linked_orders.map((o) => ({ order_id: String(o.order_id || o.id), lr_number: o.lr_number || 'LR' }))
+        : (trip.order_id ? [{ order_id: String(trip.order_id), lr_number: trip.lr_number || 'LR' }] : []);
+      if (!linked.length) return;
+      linked.forEach((item) => {
+        map[item.order_id] = {
+          tripId: trip.id,
+          tripNumber: trip.trip_number || 'Trip',
+          linkedLrs: linked,
+        };
+      });
+    });
+    return map;
+  }, [trips]);
 
   // Global counts for stats (using the API count for total, mocked stats for the rest due to no aggregate API)
   const stats = {
@@ -263,16 +285,39 @@ export default function Orders() {
                       </tr>
                     ))
                   ) : orders.length > 0 ? (
-                    orders.map((order) => {
+                    orders.map((order, index) => {
                       const st = STATUS_CONFIG[order.status] || STATUS_CONFIG.DRAFT;
+                      const tripMeta = tripMetaByOrderId[String(order.id)];
+                      const linkedLrs = tripMeta?.linkedLrs || [];
+                      const isMultiLrTrip = linkedLrs.length > 1;
+                      const currentTripId = tripMeta?.tripId ? String(tripMeta.tripId) : null;
+                      const prevTripId = (() => {
+                        const prevOrder = index > 0 ? orders[index - 1] : null;
+                        const prevMeta = prevOrder ? tripMetaByOrderId[String(prevOrder.id)] : null;
+                        return prevMeta?.tripId ? String(prevMeta.tripId) : null;
+                      })();
+                      const nextTripId = (() => {
+                        const nextOrder = index < orders.length - 1 ? orders[index + 1] : null;
+                        const nextMeta = nextOrder ? tripMetaByOrderId[String(nextOrder.id)] : null;
+                        return nextMeta?.tripId ? String(nextMeta.tripId) : null;
+                      })();
+                      const connectTop = isMultiLrTrip && prevTripId === currentTripId;
+                      const connectBottom = isMultiLrTrip && nextTripId === currentTripId;
                       return (
                         <tr key={order.id} className="hover:bg-blue-50/30 transition-colors group">
                           <td className="px-6 py-4">
-                            <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${st.bg} ${st.color} border ${st.border}`}>
+                            <div className="flex items-start gap-3">
+                              {isMultiLrTrip && (
+                                <div className="relative w-4 flex justify-center shrink-0 self-stretch">
+                                  {connectTop && <span className="absolute top-0 h-1/2 w-[2px] bg-blue-200" />}
+                                  {connectBottom && <span className="absolute bottom-0 h-1/2 w-[2px] bg-blue-200" />}
+                                  <span className="absolute top-1/2 -translate-y-1/2 h-2.5 w-2.5 rounded-full bg-blue-600 border-2 border-white shadow-sm" />
+                                </div>
+                              )}
+                              <div className={`w-8 h-8 mt-0.5 rounded-lg flex items-center justify-center ${st.bg} ${st.color} border ${st.border}`}>
                                 <Package size={16} />
                               </div>
-                              <div>
+                              <div className="min-w-0">
                                 <p className="text-[13px] font-bold text-[#172B4D] leading-none mb-1 group-hover:text-[#0052CC] transition-colors">{order.lr_number}</p>
                                 <p className={`${order.status === 'CANCELLED' ? 'text-red-400' : 'text-gray-400'} text-[9px] font-mono mt-0.5 whitespace-nowrap`}>
                                   Ref Number: {order.reference_number || 'N/A'}
@@ -296,7 +341,7 @@ export default function Orders() {
                             <div className="flex flex-col gap-1">
                               <div className="flex items-center gap-1.5 grayscale opacity-60">
                                 <Clock size={12} className="text-blue-500" />
-                                <span className="text-[10px] font-bold text-gray-500">{order.pickup_date || 'TBD'}</span>
+                                <span className="text-[10px] font-bold text-gray-500">{order.pickup_date ? formatDate(order.pickup_date) : 'TBD'}</span>
                               </div>
                               <div className="flex items-center gap-1.5">
                                 <CheckCircle2 size={12} className="text-green-500" />
@@ -304,7 +349,7 @@ export default function Orders() {
                               </div>
                               <div className="flex items-center gap-1.5">
                                 <Clock size={12} className="text-gray-400" />
-                                <span className="text-[10px] font-bold text-gray-500">{order.lr_receiving_date || 'LR TBD'}</span>
+                                <span className="text-[10px] font-bold text-gray-500">{order.lr_receiving_date ? formatDate(order.lr_receiving_date) : 'LR TBD'}</span>
                               </div>
                             </div>
                           </td>

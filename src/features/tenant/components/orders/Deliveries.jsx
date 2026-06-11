@@ -6,6 +6,7 @@ import {
   Edit2, Eye, Calendar, Hash, RefreshCcw
 } from 'lucide-react';
 import { useDeliveries, useDeleteDelivery } from '../../queries/orders/ordersQuery';
+import { formatDate } from '@/utils/dateFormat';
 import {
   CreatePODModal,
   EditDeliveryModal
@@ -19,19 +20,6 @@ const POD_STATUS_CONFIG = {
   REFUSED: { color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100', icon: <AlertCircle size={14} /> },
   RETURNED: { color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-100', icon: <FileCheck size={14} /> },
 };
-
-
-const formatDate = (dateStr) => {
-  if (!dateStr) return "-";
-  try {
-    const options = { year: 'numeric', month: 'short', day: 'numeric' };
-    return new Date(dateStr).toLocaleDateString('en-US', options);
-  } catch (e) {
-    return dateStr;
-  }
-};
-
-
 
 
 const StatusBadge = ({ status }) => {

@@ -4,6 +4,7 @@ import {
   AlertCircle, ArrowRight, Paperclip, ExternalLink, Receipt,
   CreditCard, Clock, CheckCircle2, User, Calendar
 } from 'lucide-react';
+import { formatDate, formatDateTime } from '@/utils/dateFormat';
 import {
   useCreatePOD,
   useUpdateDelivery,
@@ -378,7 +379,7 @@ export function ViewPODModal({ isOpen, onClose, item }) {
                 </div>
                 <div>
                   <p className="text-gray-500 font-medium mb-1 text-xs uppercase tracking-wider">Delivery Date (Time)</p>
-                  <p className="font-semibold text-gray-900">{pod.delivery_date ? new Date(pod.delivery_date).toLocaleString() : 'N/A'}</p>
+                  <p className="font-semibold text-gray-900">{pod.delivery_date ? formatDateTime(pod.delivery_date) : 'N/A'}</p>
                 </div>
                 <div className="col-span-2">
                   <p className="text-gray-500 font-medium mb-1 text-xs uppercase tracking-wider">Remarks</p>
@@ -459,7 +460,7 @@ export function ViewPODModal({ isOpen, onClose, item }) {
                       <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">{log.new_status}</span>
                     </div>
                     <p className="text-xs text-gray-700">{log.notes || 'Status updated'}</p>
-                    <p className="text-[9px] text-gray-400 font-bold mt-1 uppercase italic">{new Date(log.changed_at).toLocaleString()}</p>
+                    <p className="text-[9px] text-gray-400 font-bold mt-1 uppercase italic">{formatDateTime(log.changed_at)}</p>
                   </div>
                 </div>
               ))}

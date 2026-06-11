@@ -34,6 +34,7 @@ import { useDrivers } from '../../queries/drivers/driverCoreQuery';
 import { useVehicles } from '../../queries/vehicles/vehicleQuery';
 import { useVehicleTypes } from '../../queries/vehicles/vehicletypeQuery';
 import { EditTripModal as SharedEditTripModal } from './TripModals';
+import { formatDate, formatDateTime, formatDateShort, toInputDate } from '@/utils/dateFormat';
 
 // --- Dashboard Component ---
 
@@ -424,7 +425,7 @@ const HistoryList = ({ history }) => (
          </div>
          <div className="col-span-3 flex items-center gap-3">
             <div className="p-2.5 bg-[#f8fafc] rounded-lg text-gray-400"><Clock size={16} /></div>
-            <p className="text-[13px] font-bold text-[#475569]">{new Date(h.changed_at).toLocaleString()}</p>
+            <p className="text-[13px] font-bold text-[#475569]">{formatDateTime(h.changed_at)}</p>
          </div>
          <div className="col-span-1 flex justify-center"><StatusIcon status="COMPLETED" /></div>
          <div className="col-span-1 flex justify-center">
@@ -455,7 +456,7 @@ const DocsList = ({ documents }) => (
          </div>
          <div className="col-span-3 flex items-center gap-3">
             <div className="p-2.5 bg-[#f8fafc] rounded-lg text-gray-400"><Clock size={16} /></div>
-            <p className="text-[13px] font-bold text-[#475569]">{new Date(doc.uploaded_at || Date.now()).toLocaleDateString()}</p>
+            <p className="text-[13px] font-bold text-[#475569]">{formatDate(doc.uploaded_at || Date.now())}</p>
          </div>
          <div className="col-span-1 flex justify-center"><StatusIcon status="VERIFIED" /></div>
          <div className="col-span-1 flex justify-center gap-2">

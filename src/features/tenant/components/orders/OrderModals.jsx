@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { X } from 'lucide-react';
-import { useCreateOrder, useUpdateOrder } from '../../queries/orders/ordersQuery';
+import { X, Plus, Trash2 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+import { useCreateOrder, useUpdateOrder, useSyncCargo } from '../../queries/orders/ordersQuery';
 import { useCustomers, useCustomerAddresses } from '../../queries/customers/customersQuery';
 import { useVehicleTypes } from '../../queries/vehicles/vehicletypeQuery';
 
@@ -88,7 +89,9 @@ function normalizeAddress(address) {
 function OrderForm({ mode, initialData = null, onClose }) {
   const createOrder = useCreateOrder();
   const updateOrder = useUpdateOrder();
+  const syncCargo = useSyncCargo();
   const [form, setForm] = useState(EMPTY_FORM);
+  const [cargoItems, setCargoItems] = useState([{ item_code: '', description: '', quantity: '1', commodity_type: 'GENERAL' }]);
 
   const { data: customersData } = useCustomers({ page_size: 200, is_active: true });
   const customers = customersData?.results || (Array.isArray(customersData) ? customersData : []);
@@ -103,6 +106,7 @@ function OrderForm({ mode, initialData = null, onClose }) {
   useEffect(() => {
     if (!initialData) {
       setForm(EMPTY_FORM);
+      setCargoItems([{ item_code: '', description: '', quantity: '1', commodity_type: 'GENERAL' }]);
       return;
     }
     setForm({
@@ -112,6 +116,7 @@ function OrderForm({ mode, initialData = null, onClose }) {
       consignment_value: initialData.consignment_value != null ? String(initialData.consignment_value) : '',
       advance_received: initialData.advance_received != null ? String(initialData.advance_received) : '0',
     });
+    setCargoItems([{ item_code: '', description: '', quantity: '1', commodity_type: 'GENERAL' }]);
   }, [initialData]);
 
   const billingOptions = useMemo(() => customers, [customers]);
@@ -164,18 +169,53 @@ function OrderForm({ mode, initialData = null, onClose }) {
   };
 
   const isSaving = createOrder.isPending || updateOrder.isPending;
+  const isSyncingCargo = syncCargo.isPending;
 
-  const submit = (e) => {
+  const normalizedCargoItems = useMemo(
+    () =>
+      cargoItems
+        .map((row) => ({
+          item_code: (row.item_code || '').trim(),
+          description: (row.description || row.item_code || '').trim(),
+          quantity: Number(row.quantity || 0),
+          commodity_type: row.commodity_type || 'GENERAL',
+        }))
+        .filter((row) => (row.description || row.item_code) && row.quantity > 0),
+    [cargoItems]
+  );
+
+  const submit = async (e) => {
     e.preventDefault();
     const payload = buildPayload();
     if (mode === 'edit' && initialData?.id) {
       updateOrder.mutate(
         { id: initialData.id, data: payload },
-        { onSuccess: () => onClose?.() }
+        {
+          onSuccess: async () => {
+            onClose?.();
+          }
+        }
       );
       return;
     }
-    createOrder.mutate(payload, { onSuccess: () => onClose?.() });
+    createOrder.mutate(payload, {
+      onSuccess: async (order) => {
+        const orderId = order?.id;
+        try {
+          if (orderId && normalizedCargoItems.length) {
+            await syncCargo.mutateAsync({
+              order_id: orderId,
+              trip_id: null,
+              items: normalizedCargoItems,
+            });
+          }
+        } catch (_) {
+          toast.error('LR created, but cargo sync failed. Please retry from Cargo module.')
+        } finally {
+          onClose?.();
+        }
+      }
+    });
   };
 
   return (
@@ -299,6 +339,90 @@ function OrderForm({ mode, initialData = null, onClose }) {
         </div>
       </div>
 
+      {mode === 'create' && (
+        <div className="rounded-xl border border-gray-200 p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-bold text-gray-700">LR Cargo Items</h3>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+              onClick={() =>
+                setCargoItems((prev) => [
+                  ...prev,
+                  { item_code: '', description: '', quantity: '1', commodity_type: 'GENERAL' }
+                ])
+              }
+            >
+              <Plus size={12} /> Add Item
+            </button>
+          </div>
+          <div className="space-y-2">
+            {cargoItems.map((row, idx) => (
+              <div key={`cargo-${idx}`} className="grid grid-cols-12 gap-2">
+                <input
+                  className={`${INPUT_CLASS} col-span-2`}
+                  placeholder="Item code"
+                  value={row.item_code}
+                  onChange={(e) =>
+                    setCargoItems((prev) =>
+                      prev.map((r, i) => (i === idx ? { ...r, item_code: e.target.value } : r))
+                    )
+                  }
+                />
+                <input
+                  className={`${INPUT_CLASS} col-span-5`}
+                  placeholder="Cargo description"
+                  value={row.description}
+                  onChange={(e) =>
+                    setCargoItems((prev) =>
+                      prev.map((r, i) => (i === idx ? { ...r, description: e.target.value } : r))
+                    )
+                  }
+                />
+                <input
+                  type="number"
+                  min="1"
+                  className={`${INPUT_CLASS} col-span-2`}
+                  placeholder="Qty"
+                  value={row.quantity}
+                  onChange={(e) =>
+                    setCargoItems((prev) =>
+                      prev.map((r, i) => (i === idx ? { ...r, quantity: e.target.value } : r))
+                    )
+                  }
+                />
+                <select
+                  className={`${INPUT_CLASS} col-span-2`}
+                  value={row.commodity_type}
+                  onChange={(e) =>
+                    setCargoItems((prev) =>
+                      prev.map((r, i) => (i === idx ? { ...r, commodity_type: e.target.value } : r))
+                    )
+                  }
+                >
+                  <option value="GENERAL">GENERAL</option>
+                  <option value="HAZARDOUS">HAZARDOUS</option>
+                  <option value="PERISHABLE">PERISHABLE</option>
+                  <option value="FRAGILE">FRAGILE</option>
+                  <option value="HIGH_VALUE">HIGH_VALUE</option>
+                  <option value="OTHER">OTHER</option>
+                </select>
+                <button
+                  type="button"
+                  className="col-span-1 rounded-xl border border-gray-300 text-gray-500 hover:bg-red-50 hover:text-red-600"
+                  onClick={() =>
+                    setCargoItems((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev))
+                  }
+                  title="Remove cargo row"
+                >
+                  <Trash2 size={14} className="mx-auto" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <Field label="Notes">
         <textarea rows={3} className={INPUT_CLASS} value={form.notes} onChange={onChange('notes')} />
       </Field>
@@ -316,7 +440,7 @@ function OrderForm({ mode, initialData = null, onClose }) {
           disabled={isSaving}
           className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
         >
-          {isSaving ? 'Saving...' : mode === 'edit' ? 'Update Order' : 'Create Order'}
+          {isSaving || isSyncingCargo ? 'Saving...' : mode === 'edit' ? 'Update Order' : 'Create Order'}
         </button>
       </div>
     </form>

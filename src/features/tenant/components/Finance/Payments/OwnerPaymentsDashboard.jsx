@@ -41,10 +41,13 @@ export default function OwnerPaymentsDashboard() {
     owner_name: '',
     vehicle_id: '',
     trip_id: '',
+    order_id: '',
+    lr_number: '',
     payment_date: new Date().toISOString().slice(0, 10),
     booked_price: '',
     tds_percentage: '0',
     tds_amount: '0',
+    broker_commission: '0',
     advance_deduction: '0',
     net_payable: '',
     amount_paid: '0',
@@ -101,8 +104,9 @@ export default function OwnerPaymentsDashboard() {
         columns={[
           { key: 'payment_number', title: 'Payment #' },
           { key: 'owner_name', title: 'Owner' },
-          { 
-            key: 'trip_id', 
+          { key: 'lr_number', title: 'LR #' },
+          {
+            key: 'trip_id',
             title: 'Trip',
             render: (tid) => {
               if (!tid) return '-'
@@ -110,6 +114,8 @@ export default function OwnerPaymentsDashboard() {
               return t ? (t.trip_number || tid.slice(-8).toUpperCase()) : tid.slice(-8).toUpperCase()
             }
           },
+          { key: 'booked_price', title: 'Booked', render: (v) => Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2 }) },
+          { key: 'broker_commission', title: 'Broker', render: (v) => Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2 }) },
           { key: 'payment_date', title: 'Payment Date' },
           { key: 'net_payable', title: 'Net Payable', render: (v) => Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2 }) },
           { key: 'amount_paid', title: 'Paid', render: (v) => Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2 }) },
@@ -204,6 +210,16 @@ export default function OwnerPaymentsDashboard() {
               </div>
 
               <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">LR Number</label>
+                <input className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-semibold bg-gray-50/50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 outline-none transition-all" placeholder="LR-0001" value={form.lr_number} onChange={(e) => setForm({ ...form, lr_number: e.target.value })} />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Order ID (LR UUID)</label>
+                <input className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-semibold bg-gray-50/50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 outline-none transition-all" placeholder="Order UUID" value={form.order_id} onChange={(e) => setForm({ ...form, order_id: e.target.value })} />
+              </div>
+
+              <div className="space-y-1">
                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Linked Trip (Optional)</label>
                 <select
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-semibold bg-gray-50/50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
@@ -236,6 +252,11 @@ export default function OwnerPaymentsDashboard() {
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">TDS Amount</label>
                 <input className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-semibold bg-gray-50/50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 outline-none transition-all" type="number" placeholder="0.00" value={form.tds_amount} onChange={(e) => setForm({ ...form, tds_amount: e.target.value })} />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Broker Commission</label>
+                <input className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-semibold bg-gray-50/50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 outline-none transition-all" type="number" placeholder="0.00" value={form.broker_commission} onChange={(e) => setForm({ ...form, broker_commission: e.target.value })} />
               </div>
 
               <div className="space-y-1">

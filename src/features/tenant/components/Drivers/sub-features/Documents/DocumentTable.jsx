@@ -4,6 +4,7 @@ import TableActions from '../../common/TableActions';
 import { STATUS_STYLES as VERIFICATION_STYLES } from '../../common/constants';
 import { getExpiryColor, getInitials } from '../../common/utils';
 import { AlertCircle } from 'lucide-react';
+import { formatDate, formatDateTime, formatDateShort, toInputDate } from '@/utils/dateFormat';
 
 const DocumentTable = ({ documents, onView, onEdit, showDriver = false, driverMap = {}, userMap = {}, currentUser = null }) => {
   return (
@@ -64,7 +65,7 @@ const DocumentTable = ({ documents, onView, onEdit, showDriver = false, driverMa
                 <td className="px-4 py-3 whitespace-nowrap">
                   <div className="flex items-center gap-2">
                     <span className="text-[12px] text-gray-600 font-medium">
-                      {doc.expiry_date ? new Date(doc.expiry_date).toLocaleDateString() : '—'}
+                      {doc.expiry_date ? formatDate(doc.expiry_date) : '—'}
                     </span>
                     {isExpiringSoon && (
                       <div className="relative group/tooltip">

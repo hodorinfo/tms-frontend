@@ -10,13 +10,13 @@ import {
   useCargoDetail,
   useTripDetail,
   useOrderDetail,
-  useTransitionCargoStatus,
   useCargoMovements,
   useCreateCargoMovement,
   useTripStops,
   useDeleteCargo,
 } from '../../queries/orders/ordersQuery';
 import { EditCargoModal } from './CargoModals';
+import { formatDate, formatDateTime, formatDateShort, toInputDate } from '@/utils/dateFormat';
 
 // --- Shared Components ---
 const Badge = ({ children, className = "" }) => (
@@ -56,10 +56,9 @@ export default function CargoDetail() {
 
   const { data: item, isLoading, isError } = useCargoDetail(id);
   const { data: trip } = useTripDetail(item?.trip || item?.trip_id);
-  const { data: order } = useOrderDetail(trip?.order || trip?.order_id);
+  const { data: order } = useOrderDetail(item?.order || trip?.order || trip?.order_id);
   const { data: movementsData } = useCargoMovements(id);
   const { data: tripStopsData } = useTripStops(item?.trip || item?.trip_id);
-  const transitionCargo = useTransitionCargoStatus();
   const createMovement = useCreateCargoMovement(id);
   const deleteMutation = useDeleteCargo();
   const [movementForm, setMovementForm] = useState({ stop: '', action: 'LOADED', quantity: '', notes: '' });
@@ -83,14 +82,6 @@ export default function CargoDetail() {
     OTHER: 'bg-slate-50 text-slate-600 border-slate-100',
     GENERAL: 'bg-blue-50 text-blue-600 border-blue-100',
   };
-  const CARGO_TRANSITIONS = {
-    PENDING: ['LOADED'],
-    LOADED: ['UNLOADED', 'DAMAGED', 'SHORT'],
-    UNLOADED: ['DAMAGED'],
-    DAMAGED: [],
-    SHORT: [],
-  };
-  const nextStatuses = CARGO_TRANSITIONS[item.status] || [];
   const movements = movementsData?.results || (Array.isArray(movementsData) ? movementsData : []);
   const tripStops = tripStopsData?.results || (Array.isArray(tripStopsData) ? tripStopsData : []);
   const canSubmitMovement = movementForm.stop && movementForm.quantity;
@@ -159,21 +150,8 @@ export default function CargoDetail() {
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
                 <InfoCard label="Weight" value={`${item.weight_kg || '—'} kg`} icon={Scale} accent />
                 <InfoCard label="Volume" value={`${item.volume_cbm || '—'} m³`} icon={Layers} />
-                <InfoCard label="Status" value={item.status} icon={Clock} />
+                <InfoCard label="Linked LR" value={order?.lr_number || item.order || 'N/A'} icon={Clock} />
                 <InfoCard label="Stock Code" value={item.item_code} icon={Hash} />
-              </div>
-              <div className="flex flex-wrap gap-2 mt-4">
-                {nextStatuses.map((status) => (
-                  <button
-                    key={status}
-                    type="button"
-                    onClick={() => transitionCargo.mutate({ id: item.id, newStatus: status })}
-                    disabled={transitionCargo.isPending}
-                    className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border border-blue-100 bg-blue-50 text-blue-600 hover:bg-blue-100 disabled:opacity-50"
-                  >
-                    Move to {status}
-                  </button>
-                ))}
               </div>
 
               <div className="mt-8 border-t border-gray-100 pt-6">
@@ -223,10 +201,9 @@ export default function CargoDetail() {
                   <p className="text-lg font-black text-[#172B4D]">{item.height_cm} <span className="text-[10px] text-gray-400">cm</span></p>
                 </div>
              </div>
-             <div className="grid grid-cols-3 gap-4">
+             <div className="grid grid-cols-2 gap-4">
                 <InfoCard label="Stackable" value={item.stackable ? 'Yes' : 'No'} icon={Layers} />
                 <InfoCard label="Orientation" value={item.orientation} icon={MapPin} />
-                <InfoCard label="Declared Value" value={item.declared_value ? `${item.declared_value}` : '—'} icon={Shield} />
              </div>
           </div>
 
@@ -328,11 +305,11 @@ export default function CargoDetail() {
         <div className="pt-8 pb-10 border-t border-gray-200 flex flex-col md:flex-row justify-center items-center gap-12 text-center text-gray-500">
            <div>
              <p className="text-[10px] font-black uppercase tracking-widest mb-1 text-gray-400">System Created At</p>
-             <p className="text-xs font-bold text-gray-600">{item.created_at ? new Date(item.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'N/A'}</p>
+             <p className="text-xs font-bold text-gray-600">{item.created_at ? formatDateTime(item.created_at) : 'N/A'}</p>
            </div>
            <div>
              <p className="text-[10px] font-black uppercase tracking-widest mb-1 text-gray-400">Last System Update</p>
-             <p className="text-xs font-bold text-gray-600">{item.updated_at ? new Date(item.updated_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'N/A'}</p>
+             <p className="text-xs font-bold text-gray-600">{item.updated_at ? formatDateTime(item.updated_at) : 'N/A'}</p>
            </div>
         </div>
 

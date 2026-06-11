@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useDeliveryDetail, useTripDetail, useUpdateDelivery, useDeleteDelivery } from '../../queries/orders/ordersQuery';
 import { EditDeliveryModal } from './DeliveryModals';
+import { formatDate, formatDateTime, formatDateShort, toInputDate } from '@/utils/dateFormat';
 
 // --- Shared Components ---
 const Badge = ({ children, className = "" }) => (
@@ -111,7 +112,7 @@ export default function DeliveryDetail() {
                     </Badge>
                     <Badge className="bg-gray-50 text-gray-600 border-gray-100 flex items-center gap-1.5">
                       <Calendar size={12} />
-                      {pod.created_at ? new Date(pod.created_at).toLocaleDateString() : '—'}
+                      {pod.created_at ? formatDate(pod.created_at) : '—'}
                     </Badge>
                   </div>
                 </div>
@@ -148,7 +149,7 @@ export default function DeliveryDetail() {
               </div>
 
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-                <InfoCard label="Uploaded" value={pod.created_at ? new Date(pod.created_at).toLocaleString() : '—'} icon={Clock} accent />
+                <InfoCard label="Uploaded" value={pod.created_at ? formatDateTime(pod.created_at) : '—'} icon={Clock} accent />
                 <InfoCard label="Trip Number" value={pod.trip_number || trip?.trip_number} icon={Hash} />
                 <InfoCard label="File" value={pod.document_name || 'POD'} icon={MapPin} />
                 <InfoCard label="Record ID" value={pod.id.slice(-8)} icon={Layers} />

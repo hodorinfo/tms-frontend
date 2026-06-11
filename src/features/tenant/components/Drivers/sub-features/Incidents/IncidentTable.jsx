@@ -3,14 +3,12 @@ import StatusBadge from '../../common/StatusBadge';
 import TableActions from '../../common/TableActions';
 import { SEVERITY_STYLES, INCIDENT_TYPE_STYLES, STATUS_STYLES } from '../../common/constants';
 import { getInitials } from '../../common/utils';
+import { formatDate, formatDateTime, formatDateShort, toInputDate } from '@/utils/dateFormat';
 
 const IncidentTable = ({ incidents, onEdit, onView, showDriver = false, driverMap = {}, vehicleMap = {}, tripMap = {}, userMap = {}, currentUser = null }) => {
   const formatDate = (dateStr) => {
     if (!dateStr) return '—';
-    return new Date(dateStr).toLocaleString('en-IN', {
-      day: '2-digit', month: 'short', year: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    });
+    return formatDateTime(dateStr);
   };
 
   const headers = [

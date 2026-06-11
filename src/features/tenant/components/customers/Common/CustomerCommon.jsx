@@ -122,7 +122,7 @@ export const CreatePortalUserSection = ({
         <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
           <Field label="Username" required error={errors['user.username']}>
             <Input
-              value={form.user.username}
+              value={form.user.username || ''}
               onChange={e => setField('user.username', e.target.value)}
               placeholder="john_doe"
             />
@@ -130,7 +130,7 @@ export const CreatePortalUserSection = ({
           <Field label="Email Address" required error={errors['user.email']}>
             <Input
               type="email"
-              value={form.user.email}
+              value={form.user.email || ''}
               onChange={e => setField('user.email', e.target.value)}
               placeholder="john@example.com"
             />
@@ -138,7 +138,7 @@ export const CreatePortalUserSection = ({
           <Field label="Password" required error={errors['user.password']}>
             <Input
               type="password"
-              value={form.user.password}
+              value={form.user.password || ''}
               onChange={e => setField('user.password', e.target.value)}
               placeholder="••••••••"
             />
@@ -146,21 +146,21 @@ export const CreatePortalUserSection = ({
           <Field label="Confirm Password" required error={errors['user.password_confirm']}>
             <Input
               type="password"
-              value={form.user.password_confirm}
+              value={form.user.password_confirm || ''}
               onChange={e => setField('user.password_confirm', e.target.value)}
               placeholder="••••••••"
             />
           </Field>
           <Field label="First Name" required error={errors['user.first_name']}>
             <Input
-              value={form.user.first_name}
+              value={form.user.first_name || ''}
               onChange={e => setField('user.first_name', e.target.value)}
               placeholder="John"
             />
           </Field>
           <Field label="Last Name" error={errors['user.last_name']}>
             <Input
-              value={form.user.last_name}
+              value={form.user.last_name || ''}
               onChange={e => setField('user.last_name', e.target.value)}
               placeholder="Doe"
             />
@@ -169,7 +169,7 @@ export const CreatePortalUserSection = ({
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-bold select-none pointer-events-none">+91</span>
               <Input
-                value={form.user.phone}
+                value={form.user.phone || ''}
                 onChange={e => {
                   const val = e.target.value.replace(/\D/g, '').slice(0, 10);
                   setField('user.phone', val);

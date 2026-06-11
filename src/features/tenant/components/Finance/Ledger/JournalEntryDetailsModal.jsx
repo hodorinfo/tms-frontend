@@ -1,6 +1,7 @@
 import React from 'react'
 import { X, FileText } from 'lucide-react'
 import { useJournalEntryDetail } from '../../../queries/finance/financeQuery'
+import { formatDate, formatDateTime, formatDateShort, toInputDate } from '@/utils/dateFormat';
 
 export default function JournalEntryDetailsModal({ journalId, onClose }) {
   const { data: entry, isLoading } = useJournalEntryDetail(journalId)
@@ -42,7 +43,7 @@ export default function JournalEntryDetailsModal({ journalId, onClose }) {
                 <div>
                   <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Date</p>
                   <p className="text-sm font-bold text-gray-900">
-                    {entry.entry_date ? new Date(entry.entry_date).toLocaleDateString() : '-'}
+                    {entry.entry_date ? formatDate(entry.entry_date) : '-'}
                   </p>
                 </div>
                 <div>

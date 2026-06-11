@@ -12,6 +12,7 @@ import {
   useDeleteEmergencyContact,
 } from '../../../../queries/drivers/driverContactQuery';
 import DriverSelect from '../../common/DriverSelect';
+import { formatDateTime } from '@/utils/dateFormat';
 
 export const AddContactModal = ({ driverId, onClose }) => {
   const [targetDriverId, setTargetDriverId] = useState(driverId || '');
@@ -347,10 +348,7 @@ export const ViewContactModal = ({ contact, driverName, employeeId, onClose }) =
         <div className="grid grid-cols-2 gap-x-8 px-2 pt-2">
            <LabelValue 
              label="Record Created At" 
-             value={contact.created_at ? new Date(contact.created_at).toLocaleString('en-GB', { 
-               day: '2-digit', month: 'short', year: 'numeric', 
-               hour: '2-digit', minute: '2-digit', hour12: true 
-             }) : '—'} 
+             value={contact.created_at ? formatDateTime(contact.created_at) : '—'} 
            />
         </div>
 

@@ -16,6 +16,7 @@ import {
 import { useCustomer } from '../../queries/customers/customersQuery';
 import { ordersApi } from '../../api/orders/ordersEndpoint';
 import { EditOrderModal } from './OrderModals';
+import { formatDate, formatDateTime, formatDateShort, toInputDate } from '@/utils/dateFormat';
 
 const STATUS_STEPS = [
   { id: 'DRAFT', label: 'Draft', icon: Clock },
@@ -137,9 +138,9 @@ const OverviewTab = ({ order, consignor, consignee, billingCustomer, navigate })
 
         <Section title="Shipment Timeline" icon={Calendar}>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-5">
-            <DataField label="Pickup Date" value={order.pickup_date || 'Not Set'} />
-            <DataField label="Delivery Date" value={order.delivery_date || 'Not Set'} />
-            <DataField label="LR Receiving Date" value={order.lr_receiving_date || 'Not Set'} />
+            <DataField label="Pickup Date" value={order.pickup_date ? formatDate(order.pickup_date) : 'Not Set'} />
+            <DataField label="Delivery Date" value={order.delivery_date ? formatDate(order.delivery_date) : 'Not Set'} />
+            <DataField label="LR Receiving Date" value={order.lr_receiving_date ? formatDate(order.lr_receiving_date) : 'Not Set'} />
           </div>
         </Section>
       </div>
@@ -151,8 +152,8 @@ const OverviewTab = ({ order, consignor, consignee, billingCustomer, navigate })
               <div key={trip.id} className="rounded-xl border border-gray-100 bg-white p-3 flex items-center justify-between gap-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 flex-1">
                   <DataField label="Trip" value={trip.trip_number || trip.id?.slice(0, 8)} mono />
-                  <DataField label="Scheduled Pickup" value={trip.scheduled_pickup_date || 'Not Set'} />
-                  <DataField label="Scheduled Delivery" value={trip.scheduled_delivery_date || 'Not Set'} />
+                  <DataField label="Scheduled Pickup" value={trip.scheduled_pickup_date ? formatDate(trip.scheduled_pickup_date) : 'Not Set'} />
+                  <DataField label="Scheduled Delivery" value={trip.scheduled_delivery_date ? formatDate(trip.scheduled_delivery_date) : 'Not Set'} />
                 </div>
                 <button
                   type="button"
@@ -198,7 +199,7 @@ const OverviewTab = ({ order, consignor, consignee, billingCustomer, navigate })
           <DataField label="Vehicle Type" value={order.vehicle_type_preference} />
           <DataField label="Vehicle Size" value={order.vehicle_size} />
           <DataField label="Seal Number" value={order.seal_number} />
-          <DataField label="Booking Date" value={order.booking_date} />
+          <DataField label="Booking Date" value={order.booking_date ? formatDate(order.booking_date) : 'Not Set'} />
           <DataField label="Consignor Invoice No" value={order.consignor_invoice_no} />
           <DataField label="E-Way Bill No" value={order.e_way_bill_no} />
           <DataField label="Road Permit No" value={order.road_permit_no} />
@@ -212,9 +213,9 @@ const OverviewTab = ({ order, consignor, consignee, billingCustomer, navigate })
       <Section title="System Audit" icon={History}>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-5">
           <DataField label="Created By" value={order.created_by?.slice(0, 10)} />
-          <DataField label="Created On" value={order.created_at ? new Date(order.created_at).toLocaleDateString() : '---'} />
+          <DataField label="Created On" value={order.created_at ? formatDate(order.created_at) : '---'} />
           <DataField label="Created Time" value={order.created_at ? new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '---'} />
-          <DataField label="Last Updated" value={order.updated_at ? new Date(order.updated_at).toLocaleDateString() : '---'} />
+          <DataField label="Last Updated" value={order.updated_at ? formatDate(order.updated_at) : '---'} />
           <DataField label="Version" value={`v${order.version || 1}.0`} />
         </div>
       </Section>

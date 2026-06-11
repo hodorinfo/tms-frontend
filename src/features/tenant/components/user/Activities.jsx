@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, RotateCcw, Activity, Clock, User, Calendar, Globe, Monitor, Smartphone, Info, X, ChevronLeft, ChevronRight, Filter, Eye } from 'lucide-react';
 import { useActivities } from '../../queries/users/activitiesQuery';
+import { formatDate, formatDateTime, formatDateShort, toInputDate } from '@/utils/dateFormat';
 
 const Activities = () => {
   const [currentPage, setCurrentPage] = useState(1);
@@ -229,7 +230,7 @@ const Activities = () => {
                       <div className="flex flex-col">
                         <span className="text-xs font-black text-gray-700 uppercase tracking-tighter flex items-center gap-1.5">
                           <Calendar size={12} className="text-gray-300" />
-                          {new Date(activity.created_at).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })}
+                          {formatDateShort(activity.created_at)}
                         </span>
                         <span className="text-[10px] text-gray-400 font-bold mt-1 flex items-center gap-1.5">
                           <Clock size={12} className="text-gray-300" />
@@ -339,7 +340,7 @@ const Activities = () => {
                   <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Time of Event</p>
                   <div className="flex items-center gap-2 text-gray-900">
                     <Calendar size={12} className="text-gray-400" />
-                    <p className="text-xs font-bold">{new Date(selectedActivity.created_at).toLocaleString()}</p>
+                    <p className="text-xs font-bold">{formatDateTime(selectedActivity.created_at)}</p>
                   </div>
                 </div>
 

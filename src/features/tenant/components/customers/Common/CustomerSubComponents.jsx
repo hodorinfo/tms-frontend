@@ -14,6 +14,7 @@ import {
 } from '../../../queries/customers/customersQuery';
 import { useCurrentUser } from '../../../queries/users/userActionQuery';
 import { Badge, InfoCard, SectionHeader, EmptyState, Section, Modal, Field, Input, Sel, DeleteConfirm, ItemActions } from '../../Vehicles/Common/VehicleCommon';
+import { formatDate, formatDateTime, formatDateShort, toInputDate } from '@/utils/dateFormat';
 
 // ── Tab: Overview ────────────────────────────────────────────────────
 export const CustomerOverview = ({ customer: c, onEdit }) => (
@@ -68,7 +69,7 @@ export const CustomerOverview = ({ customer: c, onEdit }) => (
       <InfoCard label="Tax ID (GSTIN)" value={c?.tax_id} />
       <InfoCard label="PAN Number" value={c?.pan_number} />
       <InfoCard label="Registration No." value={c?.registration_number} />
-      <InfoCard label="Incorporation Date" value={c?.incorporation_date ? new Date(c.incorporation_date).toLocaleDateString() : null} />
+      <InfoCard label="Incorporation Date" value={c?.incorporation_date ? formatDate(c.incorporation_date) : null} />
     </div>
 
     <Section title="Financial Details" />
@@ -176,8 +177,8 @@ export const CustomerAddresses = ({ customerId }) => {
 
 const AddressFormModal = ({ initial, onClose, onSubmit, submitting }) => {
   const [form, setForm] = useState(initial || {
-    address_line1: '', address_line2: '', city: '', state: '', 
-    country: 'India', postal_code: '', address_type: 'REGISTERED', is_default: false
+    address_line1: '', address_line2: '', city: '', state: '',
+    country: 'India', postal_code: '', landmark: '', address_type: 'REGISTERED', is_default: false
   });
 
   return (
@@ -199,7 +200,7 @@ const AddressFormModal = ({ initial, onClose, onSubmit, submitting }) => {
           <Input value={form.postal_code} onChange={e => setForm({...form, postal_code: e.target.value})} />
         </Field>
         <Field label="Landmark">
-          <Input value={form.landmark} onChange={e => setForm({...form, landmark: e.target.value})} placeholder="e.g. Near City Center" />
+          <Input value={form.landmark || ''} onChange={e => setForm({...form, landmark: e.target.value})} placeholder="e.g. Near City Center" />
         </Field>
         <Field label="Address Type">
           <Sel value={form.address_type} onChange={e => setForm({...form, address_type: e.target.value})}>
@@ -473,7 +474,7 @@ export const CustomerDocuments = ({ customerId }) => {
                       {doc.verified_status || 'NOT_SET'}
                     </Badge>
                     {doc.expiry_date && (
-                      <span className="text-[10px] font-bold text-gray-400">Expires: {new Date(doc.expiry_date).toLocaleDateString()}</span>
+                      <span className="text-[10px] font-bold text-gray-400">Expires: {formatDate(doc.expiry_date)}</span>
                     )}
                   </div>
                 </div>
@@ -736,8 +737,8 @@ export const CustomerContracts = ({ customerId }) => {
                     <Badge className={contract.status === 'ACTIVE' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-orange-50 text-orange-700'}>{contract.status}</Badge>
                   </div>
                   <div className="flex items-center gap-4">
-                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-tight">Starts: {new Date(contract.start_date).toLocaleDateString()}</span>
-                    {contract.end_date && <span className="text-[11px] font-bold text-gray-400 uppercase tracking-tight">Ends: {new Date(contract.end_date).toLocaleDateString()}</span>}
+                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-tight">Starts: {formatDate(contract.start_date)}</span>
+                    {contract.end_date && <span className="text-[11px] font-bold text-gray-400 uppercase tracking-tight">Ends: {formatDate(contract.end_date)}</span>}
                   </div>
                 </div>
               </div>
@@ -880,7 +881,7 @@ export const CustomerNotes = ({ customerId }) => {
                   </div>
                   <div>
                     <p className="text-xs font-black text-[#172B4D]">{note.created_by_name || 'System User'}</p>
-                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">{new Date(note.created_at).toLocaleString()}</p>
+                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">{formatDateTime(note.created_at)}</p>
                   </div>
                 </div>
                 <div className="opacity-0 group-hover:opacity-100 transition-opacity">
@@ -929,10 +930,10 @@ const NoteFormModal = ({ initial, onClose, onSubmit, submitting }) => {
   return (
     <Modal title={initial ? 'Edit Note' : 'Add Note'} onClose={onClose} onSubmit={() => onSubmit(form)} submitting={submitting}>
       <div className="space-y-4">
-        <Field label="Note Content" required>
+        <Field label="Note Content">
           <textarea 
             className="w-full min-h-[120px] p-4 rounded-xl border border-gray-200 bg-gray-50 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#0052CC]/10 focus:border-[#0052CC] transition-all resize-none"
-            value={form.note}
+            value={form.note || ''}
             onChange={e => setForm({...form, note: e.target.value})}
             placeholder="Write your internal note here..."
           />
@@ -975,7 +976,7 @@ export const CustomerCreditHistoryView = ({ customerId, currentLimit }) => {
               <div className="absolute -left-[2.15rem] top-1.5 w-3 h-3 rounded-full bg-white border-2 border-[#0052CC]" />
               <div className="flex items-center justify-between mb-1">
                 <p className="text-sm font-black text-[#172B4D]">₹{Number(entry.credit_limit).toLocaleString('en-IN')}</p>
-                <span className="text-[10px] text-gray-400 font-bold uppercase">{new Date(entry.effective_date).toLocaleDateString()}</span>
+                <span className="text-[10px] text-gray-400 font-bold uppercase">{formatDate(entry.effective_date)}</span>
               </div>
               {entry.reason && <p className="text-xs text-gray-400 leading-tight italic">Reason: {entry.reason}</p>}
             </div>

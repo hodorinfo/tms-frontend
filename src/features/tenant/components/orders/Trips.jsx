@@ -299,6 +299,15 @@ export default function TripsMainBody() {
                     <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100">
                       Fleet Info
                     </th>
+                    <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100">
+                      Ownership
+                    </th>
+                    <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100">
+                      Bill Amount
+                    </th>
+                    <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100 text-center">
+                      Billing
+                    </th>
                     <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100 text-center">
                       Status
                     </th>
@@ -313,7 +322,7 @@ export default function TripsMainBody() {
                       .fill(0)
                       .map((_, i) => (
                         <tr key={i} className="animate-pulse">
-                          <td colSpan={7} className="px-6 py-5 h-20 bg-gray-50/10" />
+                          <td colSpan={10} className="px-6 py-5 h-20 bg-gray-50/10" />
                         </tr>
                       ))
                   ) : trips.length > 0 ? (
@@ -379,6 +388,24 @@ export default function TripsMainBody() {
                           </div>
                         </td>
                         <td className="px-6 py-4">
+                          <span className="text-[10px] font-bold text-gray-600 bg-gray-50 px-2 py-1 rounded border border-gray-100 w-fit inline-block">
+                            {trip.vehicle_ownership_type === 'HIRED_CARRIER' ? 'Hired' : 'Own Fleet'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="text-[12px] font-bold text-emerald-700">
+                            ₹ {trip.total_bill_amount || '0.00'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${trip.is_billed ? 'bg-green-50 text-green-700 border-green-100' : 'bg-gray-50 text-gray-500 border-gray-100'}`}>
+                            {trip.is_billed ? 'Billed' : 'Unbilled'}
+                          </span>
+                          {trip.is_paid && (
+                            <span className="ml-1 text-[10px] font-bold text-blue-600">· Paid</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
                           <StatusBadge status={trip.status} />
                         </td>
                         <td className="px-6 py-4">
@@ -413,7 +440,7 @@ export default function TripsMainBody() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={7} className="px-6 py-20 text-center">
+                      <td colSpan={10} className="px-6 py-20 text-center">
                         <div className="flex flex-col items-center justify-center opacity-20">
                           <Truck size={48} className="mb-4" />
                           <p className="text-sm font-black uppercase tracking-[0.2em]">No trips found</p>

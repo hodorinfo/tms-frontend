@@ -67,6 +67,19 @@ import AdvanceDetail from '../components/Finance/Advances/AdvanceDetail';
 import FinanceReportsDashboard from '../components/Finance/Reports/FinanceReportsDashboard';
 import FinancePeriodsPage from '../components/Finance/Periods/FinancePeriodsPage';
 import PayrollEntriesPage from '../components/Finance/Payroll/PayrollEntriesPage';
+import FinanceDashboard from '../components/Finance/FinanceDashboard';
+import VehicleCostsPage from '../components/Finance/VehicleCosts/VehicleCostsPage';
+import TripFinanceList from '../components/Finance/TripFinance/TripFinanceList';
+import TripFinanceDetail from '../components/Finance/TripFinance/TripFinanceDetail';
+import CustomerBillingList from '../components/Finance/CustomerBilling/CustomerBillingList';
+import CustomerBillingDetail from '../components/Finance/CustomerBilling/CustomerBillingDetail';
+import DriverFinanceList from '../components/Finance/DriverFinance/DriverFinanceList';
+import DriverFinanceDetail from '../components/Finance/DriverFinance/DriverFinanceDetail';
+import ExpensesDashboard from '../components/Finance/Expenses/ExpensesDashboard';
+import ExpenseDetail from '../components/Finance/Expenses/ExpenseDetail';
+import SettlementHub from '../components/Finance/Settlement/SettlementHub';
+import TripSettlementDetail from '../components/Finance/Settlement/TripSettlementDetail';
+import DriverSettlementDetail from '../components/Finance/Settlement/DriverSettlementDetail';
 import LRRecordsPage from '../components/orders/LRRecordsPage';
 import GeographyDashboard from '../components/MasterData/GeographyDashboard';
 import RateCardsDashboard from '../components/MasterData/RateCardsDashboard';
@@ -154,9 +167,20 @@ const Routing = () => {
         <Route path="orders/:id/trips" element={<ErrorBoundary><TripNestedSubResource /></ErrorBoundary>} />
         <Route path="orders/trip-manager" element={<Navigate to="/tenant/dashboard/orders/trips" replace />} />
         {/* Finance */}
+        <Route path="finance" element={<FinanceDashboard />} />
+        <Route path="finance/trips" element={<TripFinanceList />} />
+        <Route path="finance/trips/:tripId" element={<TripFinanceDetail />} />
+        <Route path="finance/billing" element={<CustomerBillingList />} />
+        <Route path="finance/billing/:customerId" element={<CustomerBillingDetail />} />
+        <Route path="finance/drivers" element={<DriverFinanceList />} />
+        <Route path="finance/drivers/:driverId" element={<DriverFinanceDetail />} />
         <Route path="finance/invoices" element={<InvoicesDashboard />} />
         <Route path="finance/invoices/:id" element={<InvoiceDetail />} />
         <Route path="finance/periods" element={<FinancePeriodsPage />} />
+        <Route path="finance/customer-ledger" element={<Navigate to="/tenant/dashboard/finance/billing" replace />} />
+        <Route path="finance/customer-ledger/:customerId" element={<Navigate to="/tenant/dashboard/finance/billing" replace />} />
+        <Route path="finance/vehicle-costs" element={<VehicleCostsPage />} />
+        <Route path="finance/vehicle-costs/:vehicleId" element={<VehicleCostsPage />} />
 
         <Route path="finance/ledger" element={<FinanceLedgerPage />} />
         <Route path="finance/reconciliations" element={<ReconciliationsPage />} />
@@ -167,6 +191,11 @@ const Routing = () => {
         <Route path="finance/tds" element={<TDSDashboard />} />
         <Route path="finance/advances" element={<AdvancesDashboard />} />
         <Route path="finance/advances/:id" element={<AdvanceDetail />} />
+        <Route path="finance/expenses" element={<ExpensesDashboard />} />
+        <Route path="finance/expenses/:id" element={<ExpenseDetail />} />
+        <Route path="finance/settlement" element={<SettlementHub />} />
+        <Route path="finance/settlement/trip/:tripId" element={<TripSettlementDetail />} />
+        <Route path="finance/settlement/driver/:driverId" element={<DriverSettlementDetail />} />
         <Route path="finance/reports" element={<FinanceReportsDashboard />} />
 
         {/* Master Data */}

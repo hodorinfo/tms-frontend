@@ -4,6 +4,7 @@ import { Search, RotateCcw, Plus, User, Mail, Lock, Phone, X, Edit, Calendar, Us
 import { useUsers, useUpdateUser, useCreateUser, useUser, useRestoreUser, useUserStats } from '../../queries/users/userQuery';
 import { useLockUser, useUnlockUser } from '../../queries/users/userActionQuery';
 import { useEffect } from 'react';
+import { formatDate } from '@/utils/dateFormat';
 
 const UserDetail = () => {
   const navigate = useNavigate();
@@ -822,7 +823,7 @@ const UserDetail = () => {
                                 </div>
                                 <div className="pt-2 border-t border-blue-100/50">
                                   <label className="block text-[10px] font-bold text-gray-400 uppercase">Reported At</label>
-                                  <p className="text-[11px] font-bold text-gray-500">{(fullUserData || selectedUser)?.created_at ? new Date((fullUserData || selectedUser).created_at).toLocaleDateString() : 'N/A'}</p>
+                                  <p className="text-[11px] font-bold text-gray-500">{(fullUserData || selectedUser)?.created_at ? formatDate((fullUserData || selectedUser).created_at) : 'N/A'}</p>
                                 </div>
                               </div>
                             </div>

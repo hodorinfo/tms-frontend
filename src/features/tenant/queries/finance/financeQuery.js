@@ -5,6 +5,7 @@ import {
   advanceApi,
   creditNoteApi,
   customerPaymentApi,
+  expenseApi,
   financePeriodApi,
   financeReportApi,
   invoiceLineItemApi,
@@ -17,6 +18,7 @@ import {
   tripLookupApi,
   tdsApi,
 } from '../../api/finance/financeEndpoint'
+import { formatApiError } from '../../components/Finance/Common/financeUtils'
 
 export const financeKeys = {
   invoices: (params) => ['finance', 'invoices', params],
@@ -40,11 +42,20 @@ export const financeKeys = {
   journalEntryDetail: (id) => ['finance', 'journalEntryDetail', id],
   lrSettlement: (tripId) => ['finance', 'lrSettlement', tripId],
   reconciliations: (params) => ['finance', 'reconciliations', params],
+  expenses: (params) => ['finance', 'expenses', params],
+  expenseDetail: (id) => ['finance', 'expenseDetail', id],
+  tripSettlement: (tripId) => ['finance', 'tripSettlement', tripId],
+  expensesByTrip: (tripId) => ['finance', 'expensesByTrip', tripId],
+  expensesByVehicle: (vehicleId) => ['finance', 'expensesByVehicle', vehicleId],
 }
 
 const onErr = (label) => (error) => {
-  const msg = error?.response?.data?.detail || error?.response?.data?.message || error.message || 'Request failed'
-  toast.error(`${label}: ${msg}`)
+  const status = error?.response?.status
+  let msg = formatApiError(error?.response?.data) || error.message || 'Request failed'
+  if (status >= 500 && (msg === 'Request failed' || msg.includes('Server error'))) {
+    msg = 'Server error — please try again.'
+  }
+  toast.error(`${label}: ${msg}`, { duration: 7000 })
 }
 
 export const useInvoices = (params) => useQuery({ queryKey: financeKeys.invoices(params), queryFn: () => invoiceApi.list(params) })
@@ -77,6 +88,30 @@ export const useTripProfitabilityReport = (params) =>
   useQuery({ queryKey: financeKeys.reports('tripProfitability', params), queryFn: () => financeReportApi.tripProfitability(params) })
 export const useTDSRegisterReport = (params) =>
   useQuery({ queryKey: financeKeys.reports('tdsRegister', params), queryFn: () => financeReportApi.tdsRegister(params) })
+export const useFinanceDashboard = () =>
+  useQuery({ queryKey: ['finance', 'dashboard'], queryFn: () => financeReportApi.dashboard() })
+export const useCustomerLedger = (customerId) =>
+  useQuery({
+    queryKey: ['finance', 'customerLedger', customerId],
+    queryFn: () => financeReportApi.customerLedger(customerId),
+    enabled: !!customerId,
+  })
+export const useMonthlyPnLReport = (params) =>
+  useQuery({ queryKey: financeKeys.reports('monthlyPnl', params), queryFn: () => financeReportApi.monthlyPnl(params) })
+export const useCashFlowReport = (params) =>
+  useQuery({ queryKey: financeKeys.reports('cashFlow', params), queryFn: () => financeReportApi.cashFlow(params) })
+export const useCustomerOutstandingReport = (params) =>
+  useQuery({ queryKey: financeKeys.reports('customerOutstanding', params), queryFn: () => financeReportApi.customerOutstanding(params) })
+export const useLRRevenueVsCostReport = (params) =>
+  useQuery({ queryKey: financeKeys.reports('lrRevenueVsCost', params), queryFn: () => financeReportApi.lrRevenueVsCost(params) })
+export const useInvoiceCollectionReport = (params) =>
+  useQuery({ queryKey: financeKeys.reports('invoiceCollection', params), queryFn: () => financeReportApi.invoiceCollection(params) })
+export const usePayrollRegisterReport = (params) =>
+  useQuery({ queryKey: financeKeys.reports('payrollRegister', params), queryFn: () => financeReportApi.payrollRegister(params) })
+export const useAdvanceOutstandingReport = (params) =>
+  useQuery({ queryKey: financeKeys.reports('advanceOutstanding', params), queryFn: () => financeReportApi.advanceOutstanding(params) })
+export const useDriverProfitReport = (params) =>
+  useQuery({ queryKey: financeKeys.reports('driverProfit', params), queryFn: () => financeReportApi.driverProfit(params) })
 export const useAdvanceDetail = (id) => useQuery({
   queryKey: ['finance', 'advanceDetail', id],
   queryFn: () => advanceApi.get(id),
@@ -123,6 +158,26 @@ export const useLRSettlement = (tripId) =>
   })
 export const useReconciliations = (params) =>
   useQuery({ queryKey: financeKeys.reconciliations(params), queryFn: () => reconciliationApi.list(params) })
+export const useExpenses = (params) =>
+  useQuery({ queryKey: financeKeys.expenses(params), queryFn: () => expenseApi.list(params) })
+export const useExpensesByTrip = (tripId, options = {}) =>
+  useQuery({
+    queryKey: financeKeys.expensesByTrip(tripId),
+    queryFn: () => expenseApi.byTrip(tripId),
+    enabled: !!tripId && (options.enabled !== false),
+    ...options,
+  })
+export const useExpensesByVehicle = (vehicleId, options = {}) =>
+  useQuery({
+    queryKey: financeKeys.expensesByVehicle(vehicleId),
+    queryFn: () => expenseApi.byVehicle(vehicleId),
+    enabled: !!vehicleId && (options.enabled !== false),
+    ...options,
+  })
+export const useExpenseDetail = (id) =>
+  useQuery({ queryKey: financeKeys.expenseDetail(id), queryFn: () => expenseApi.get(id), enabled: !!id })
+export const useTripSettlement = (tripId) =>
+  useQuery({ queryKey: financeKeys.tripSettlement(tripId), queryFn: () => settlementApi.getLrSettlement(tripId), enabled: !!tripId })
 
 export const useCreateInvoice = () => {
   const qc = useQueryClient()
@@ -430,6 +485,7 @@ export const useGenerateInvoiceFromTrip = () => {
     mutationFn: invoiceApi.generateFromTrip,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['finance', 'invoices'] })
+      qc.invalidateQueries({ queryKey: ['finance', 'invoiceLineItems'] })
       toast.success('Invoice generated from trip')
     },
     onError: onErr('Could not generate invoice'),
@@ -557,6 +613,43 @@ export const useDeleteReconciliation = () => {
       toast.success('Reconciliation deleted')
     },
     onError: onErr('Delete failed'),
+  })
+}
+export const useApproveExpense = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, data }) => expenseApi.approve(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['finance', 'expenses'] })
+      qc.invalidateQueries({ queryKey: ['finance', 'expensesByTrip'] })
+      qc.invalidateQueries({ queryKey: ['finance', 'expensesByVehicle'] })
+      toast.success('Expense approved')
+    },
+    onError: onErr('Could not approve expense'),
+  })
+}
+export const useRejectExpense = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, rejection_reason }) => expenseApi.reject(id, rejection_reason),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['finance', 'expenses'] })
+      qc.invalidateQueries({ queryKey: ['finance', 'expensesByTrip'] })
+      qc.invalidateQueries({ queryKey: ['finance', 'expensesByVehicle'] })
+      toast.success('Expense rejected')
+    },
+    onError: onErr('Could not reject expense'),
+  })
+}
+export const useFinalizeTripSettlement = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: settlementApi.finalizeTrip,
+    onSuccess: (_data, tripId) => {
+      qc.invalidateQueries({ queryKey: financeKeys.tripSettlement(tripId) })
+      toast.success('Trip settlement finalized')
+    },
+    onError: onErr('Could not finalize trip settlement'),
   })
 }
 export const useGeneratePayrollEntries = () => {

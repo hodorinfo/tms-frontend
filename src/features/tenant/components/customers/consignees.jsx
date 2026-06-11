@@ -19,6 +19,8 @@ import { useUsers } from '../../queries/users/userQuery';
 import { useDrivers } from '../../queries/drivers/driverCoreQuery';
 import { TableShimmer, ErrorState } from '../Vehicles/Common/StateFeedback';
 import CustomerListFilterBar from './Common/CustomerListFilterBar';
+import { flattenValidationErrors, sanitizeProfileCreatePayload } from './Common/customerCreatePayload';
+import { formatDate, formatDateTime, formatDateShort, toInputDate } from '@/utils/dateFormat';
 
 const EMPTY_FORM = {
   customer_id: '',
@@ -41,6 +43,8 @@ const EMPTY_FORM = {
   receiving_hours_start: '',
   receiving_hours_end: '',
   warehouse_address: '',
+  dock_available: false,
+  forklift_available: false,
   sales_person_id: '',
   account_manager_id: '',
   user_id: '',
@@ -235,10 +239,6 @@ const ConsigneesDashboard = () => {
       );
       if (isDuplicate) e.pan_number = 'This PAN number is already taken by another customer';
     }
-    if (form.legal_name) {
-      const match = eligibleCustomers.find(c => c.legal_name?.toLowerCase() === form.legal_name.toLowerCase());
-      if (match) form.customer_id = match.id;
-    }
     if (!form.consignee_code?.trim()) {
       const initials = (form.legal_name || 'CONE').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 3);
       form.consignee_code = `CONE-${initials}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -280,25 +280,10 @@ const ConsigneesDashboard = () => {
   const handleSubmit = () => {
     if (!validate()) return;
 
-    // Merge the selected customer's data into the payload
-    // Clean up: Destructure to remove system fields and nested customer object
-    const selectedCustomer = eligibleCustomers.find(c => c.id === form.customer_id) || {};
-    const {
-      id: _id,
-      customer: _customer,
-      customer_code: _customer_code,
-      created_at: _created_at,
-      updated_at: _updated_at,
-      ...cleanPayload
-    } = { ...selectedCustomer, ...form };
-
-    const payload = cleanPayload;
-
-    if (createPortalUser && modal.type === 'create') {
-      // user is handled via create mutation usually
-    } else {
-      delete payload.user;
-    }
+    const payload = sanitizeProfileCreatePayload(form, {
+      createPortalUser,
+      isCreate: modal.type === 'create',
+    });
 
     // Process documentation requirements
     if (typeof payload.documentation_requirements === 'string') {
@@ -323,8 +308,9 @@ const ConsigneesDashboard = () => {
     if (modal.type === 'create') {
       createMutation.mutate(payload, {
         onError: (err) => {
-          if (err.response?.status === 400 && err.response.data?.details) {
-            setErrors(err.response.data.details);
+          const fieldErrors = flattenValidationErrors(err.response?.data);
+          if (err.response?.status === 400 && fieldErrors) {
+            setErrors(fieldErrors);
           } else {
             setErrors(prev => ({ ...prev, _generic: `Create Failed: ${err.response?.data?.detail || err.message}` }));
           }
@@ -334,8 +320,9 @@ const ConsigneesDashboard = () => {
       updateMutation.mutate({ id: modal.id, data: payload }, {
         onSuccess: () => closeModal(),
         onError: (err) => {
-          if (err.response?.status === 400 && err.response.data?.details) {
-            setErrors(err.response.data.details);
+          const fieldErrors = flattenValidationErrors(err.response?.data);
+          if (err.response?.status === 400 && fieldErrors) {
+            setErrors(fieldErrors);
           } else {
             setErrors(prev => ({ ...prev, _generic: `Update Failed: ${err.response?.data?.detail || err.message}` }));
           }
@@ -657,13 +644,7 @@ const ConsigneesDashboard = () => {
             <Field label="Legal Name" required error={errors.legal_name}>
               <Input
                 value={form.legal_name || ''}
-                onChange={e => {
-                  const val = e.target.value;
-                  setField('legal_name', val);
-                  const match = eligibleCustomers.find(c => c.legal_name?.toLowerCase() === val.toLowerCase());
-                  if (match) setField('customer_id', match.id);
-                  else setField('customer_id', '');
-                }}
+                onChange={e => setField('legal_name', e.target.value)}
                 disabled={modal.type === 'edit' || modal.type === 'view'}
                 placeholder="Enter customer legal name..."
                 className="bg-white"
@@ -733,7 +714,7 @@ const ConsigneesDashboard = () => {
               <Input type="number" value={form.avg_unloading_time_minutes || ''} disabled={modal.type === 'view'} onChange={e => setField('avg_unloading_time_minutes', e.target.value)} />
             </Field>
             <Field label="Documentation Requirements" className="col-span-2">
-              <Input value={form.documentation_requirements} onChange={e => setField('documentation_requirements', e.target.value)} disabled={modal.type === 'view'}
+              <Input value={form.documentation_requirements || ''} onChange={e => setField('documentation_requirements', e.target.value)} disabled={modal.type === 'view'}
                 placeholder="Invoice, E-Way Bill, Gate Pass" />
             </Field>
             <Field label="Unloading Instructions" className="col-span-2">
@@ -804,7 +785,7 @@ const ConsigneeOverview = ({ consignee: c, onEdit }) => (
 
 
     <div className="pt-3 border-t border-gray-100 flex justify-end items-center gap-4">
-      <p className="text-[10px] text-gray-400 font-mono italic mr-auto">Created: {c.created_at ? new Date(c.created_at).toLocaleString() : '—'}</p>
+      <p className="text-[10px] text-gray-400 font-mono italic mr-auto">Created: {c.created_at ? formatDateTime(c.created_at) : '—'}</p>
     </div>
   </div>
 );

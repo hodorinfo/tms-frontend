@@ -4,6 +4,7 @@ import { Plus, Edit2, Trash2 } from 'lucide-react'
 import FinanceListPage from '../Common/FinanceListPage'
 import ReconcileModal from './ReconcileModal'
 import { useReconciliations, useInvoices, useCustomerPayments, useDeleteReconciliation } from '../../../queries/finance/financeQuery'
+import { formatDate, formatDateTime, formatDateShort, toInputDate } from '@/utils/dateFormat';
 
 const asList = (data) => data?.results || (Array.isArray(data) ? data : [])
 
@@ -31,7 +32,7 @@ export default function ReconciliationsPage() {
   )
 
   const renderDate = (d) => (
-    <span className="font-medium text-gray-700">{d ? new Date(d).toLocaleDateString() : '-'}</span>
+    <span className="font-medium text-gray-700">{d ? formatDate(d) : '-'}</span>
   )
 
   // Helper to map UI names from the fetched lists

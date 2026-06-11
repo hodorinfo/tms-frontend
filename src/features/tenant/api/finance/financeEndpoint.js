@@ -12,6 +12,7 @@ const REP_BASE = '/api/v1/finance/reports'
 const PER_BASE = '/api/v1/finance/periods'
 const LED_BASE = '/api/v1/finance/ledger'
 const SET_BASE = '/api/v1/finance/settlement'
+const EXP_BASE = '/api/v1/finance/expenses'
 
 export const invoiceApi = {
   list: (params) => axiosInstance.get(`${INV_BASE}/invoices/`, { params }).then(r => r.data),
@@ -144,10 +145,20 @@ export const advanceApi = {
 }
 
 export const financeReportApi = {
+  dashboard: () => axiosInstance.get(`${REP_BASE}/dashboard/`).then(r => r.data),
+  customerLedger: (customerId) => axiosInstance.get(`${REP_BASE}/customer-ledger/${customerId}/`).then(r => r.data),
   arAging: (params) => axiosInstance.get(`${REP_BASE}/ar-aging/`, { params }).then(r => r.data),
   ownerPayables: (params) => axiosInstance.get(`${REP_BASE}/owner-payables/`, { params }).then(r => r.data),
   tripProfitability: (params) => axiosInstance.get(`${REP_BASE}/trip-profitability/`, { params }).then(r => r.data),
   tdsRegister: (params) => axiosInstance.get(`${REP_BASE}/tds-register/`, { params }).then(r => r.data),
+  driverProfit: (params) => axiosInstance.get(`${REP_BASE}/driver-profit/`, { params }).then(r => r.data),
+  advanceOutstanding: (params) => axiosInstance.get(`${REP_BASE}/advance-outstanding/`, { params }).then(r => r.data),
+  monthlyPnl: (params) => axiosInstance.get(`${REP_BASE}/monthly-pnl/`, { params }).then(r => r.data),
+  cashFlow: (params) => axiosInstance.get(`${REP_BASE}/cash-flow/`, { params }).then(r => r.data),
+  customerOutstanding: (params) => axiosInstance.get(`${REP_BASE}/customer-outstanding/`, { params }).then(r => r.data),
+  lrRevenueVsCost: (params) => axiosInstance.get(`${REP_BASE}/lr-revenue-vs-cost/`, { params }).then(r => r.data),
+  invoiceCollection: (params) => axiosInstance.get(`${REP_BASE}/invoice-collection/`, { params }).then(r => r.data),
+  payrollRegister: (params) => axiosInstance.get(`${REP_BASE}/payroll-register/`, { params }).then(r => r.data),
 }
 
 export const tripLookupApi = {
@@ -174,4 +185,20 @@ export const ledgerApi = {
 
 export const settlementApi = {
   getLrSettlement: (tripId) => axiosInstance.get(`${SET_BASE}/lr/${tripId}/`).then(r => r.data),
+  finalizeTrip: (tripId) => axiosInstance.post(`${SET_BASE}/trip/${tripId}/finalize/`).then(r => r.data),
+  finalizeDriver: (driverId, data) => axiosInstance.post(`${SET_BASE}/driver/${driverId}/finalize/`, data).then(r => r.data),
+}
+
+export const expenseApi = {
+  list: (params) => axiosInstance.get(`${EXP_BASE}/`, { params }).then(r => r.data),
+  get: (id) => axiosInstance.get(`${EXP_BASE}/${id}/`).then(r => r.data),
+  create: (data) => axiosInstance.post(`${EXP_BASE}/`, data).then(r => r.data),
+  update: (id, data) => axiosInstance.patch(`${EXP_BASE}/${id}/`, data).then(r => r.data),
+  delete: (id) => axiosInstance.delete(`${EXP_BASE}/${id}/`).then(r => r.data),
+  submit: (id) => axiosInstance.post(`${EXP_BASE}/${id}/submit/`).then(r => r.data),
+  approve: (id, data) => axiosInstance.post(`${EXP_BASE}/${id}/approve/`, data || {}).then(r => r.data),
+  reject: (id, rejection_reason) => axiosInstance.post(`${EXP_BASE}/${id}/reject/`, { rejection_reason }).then(r => r.data),
+  settle: (id, data) => axiosInstance.post(`${EXP_BASE}/${id}/settle/`, data || {}).then(r => r.data),
+  byTrip: (tripId) => axiosInstance.get(`${EXP_BASE}/by-trip/${tripId}/`).then(r => r.data),
+  byVehicle: (vehicleId) => axiosInstance.get(`${EXP_BASE}/by-vehicle/${vehicleId}/`).then(r => r.data),
 }

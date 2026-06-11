@@ -15,6 +15,7 @@ import {
   useSalaryStructures,
 } from '../../../../queries/drivers/salaryStructureQuery';
 import { useMemo } from 'react';
+import { formatDateTime } from '@/utils/dateFormat';
 
 export const PAYMENT_FREQUENCIES = ['MONTHLY', 'BIWEEKLY', 'WEEKLY'];
 
@@ -377,7 +378,7 @@ export const ViewSalaryModal = ({ salary, driverName, employeeId, onClose }) => 
             
             <LabelValue 
               label="record_created_at" 
-              value={salary.created_at ? new Date(salary.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }).replace(',', '') : '—'} 
+              value={salary.created_at ? formatDateTime(salary.created_at) : '—'} 
             />
           </div>
 

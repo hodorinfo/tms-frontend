@@ -12,6 +12,7 @@ import {
 } from '../../../queries/finance/financeQuery'
 
 import PayrollDeductionsPage from './PayrollDeductionsPage'
+import { formatDate, formatDateTime, formatDateShort, toInputDate } from '@/utils/dateFormat';
 
 const asList = (data) => data?.results || (Array.isArray(data) ? data : [])
 
@@ -100,8 +101,8 @@ export default function PayrollDashboard() {
               { key: 'period_code', title: 'Period Code', render: (v) => <span className="font-bold text-[#172B4D]">{v}</span> },
               { key: 'month', title: 'Month', render: (m) => new Date(2000, m - 1).toLocaleString('default', { month: 'long' }) },
               { key: 'year', title: 'Year' },
-              { key: 'start_date', title: 'From', render: (d) => d ? new Date(d).toLocaleDateString() : '-' },
-              { key: 'end_date', title: 'To', render: (d) => d ? new Date(d).toLocaleDateString() : '-' },
+              { key: 'start_date', title: 'From', render: (d) => d ? formatDate(d) : '-' },
+              { key: 'end_date', title: 'To', render: (d) => d ? formatDate(d) : '-' },
               { 
                 key: 'status', 
                 title: 'Status',

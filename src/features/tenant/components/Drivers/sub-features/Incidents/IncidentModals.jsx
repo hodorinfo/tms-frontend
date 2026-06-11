@@ -17,6 +17,7 @@ import { useCurrentUser } from '../../../../queries/users/userActionQuery';
 import { useTrips } from '../../../../queries/orders/ordersQuery';
 import DriverSelect from '../../common/DriverSelect';
 import { INCIDENT_TYPES, SEVERITY_TYPES as SEVERITY_LIST, RESOLUTION_STATUS } from '../../common/constants';
+import { formatDate, formatDateTime, formatDateShort, toInputDate } from '@/utils/dateFormat';
 
 // Vehicle Select for incidents - Displays registration, make and model
 export const VehicleSelect = ({ value, onChange, ...props }) => {
@@ -453,7 +454,7 @@ export const EditIncidentModal = ({ incident, driverId, onClose }) => {
               <div>
                 <Label>Resolved At</Label>
                 <div className="text-xs font-semibold text-gray-600 mt-1">
-                  {form.resolved_at ? new Date(form.resolved_at).toLocaleString() : '—'}
+                  {form.resolved_at ? formatDateTime(form.resolved_at) : '—'}
                 </div>
               </div>
             </div>
@@ -496,10 +497,7 @@ export const ViewIncidentModal = ({ incident, driverName, employeeId, vehicleNam
 
   const formatDate = (dateStr) => {
     if (!dateStr) return '—';
-    return new Date(dateStr).toLocaleString('en-IN', {
-      day: '2-digit', month: 'short', year: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    });
+    return formatDateTime(dateStr);
   };
 
   const resolvedBy = userMap[incident.resolved_by] || 
@@ -558,10 +556,7 @@ export const ViewIncidentModal = ({ incident, driverName, employeeId, vehicleNam
            <LabelValue label="Resolution Status" value={incident.resolution_status_display || incident.resolution_status} />
            <LabelValue 
              label="Record Created At" 
-             value={incident.created_at ? new Date(incident.created_at).toLocaleString('en-GB', { 
-               day: '2-digit', month: 'short', year: 'numeric', 
-               hour: '2-digit', minute: '2-digit', hour12: true 
-             }) : '—'} 
+             value={incident.created_at ? formatDateTime(incident.created_at) : '—'} 
            />
         </div>
 

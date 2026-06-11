@@ -19,6 +19,8 @@ import { useUsers } from '../../queries/users/userQuery';
 import { useDrivers } from '../../queries/drivers/driverCoreQuery';
 import { TableShimmer, ErrorState } from '../Vehicles/Common/StateFeedback';
 import CustomerListFilterBar from './Common/CustomerListFilterBar';
+import { flattenValidationErrors, sanitizeProfileCreatePayload } from './Common/customerCreatePayload';
+import { formatDate, formatDateTime, formatDateShort, toInputDate } from '@/utils/dateFormat';
 
 const EMPTY_FORM = {
   customer_id: '',
@@ -290,26 +292,10 @@ const Consignors = () => {
   const handleSubmit = () => {
     if (!validate()) return;
 
-    const selectedCustomer = eligibleCustomers.find(c => c.id === form.customer_id) || {};
-
-    // Merge the selected customer's data into the payload
-    // Clean up to avoid 400 errors from nested objects
-    const {
-      id: _id,
-      customer: _customer,
-      customer_code: _customer_code,
-      created_at: _created_at,
-      updated_at: _updated_at,
-      ...cleanPayload
-    } = { ...selectedCustomer, ...form };
-
-    const payload = cleanPayload;
-
-    if (createPortalUser && modal.type === 'create') {
-      // user is handled via create mutation usually
-    } else {
-      delete payload.user;
-    }
+    const payload = sanitizeProfileCreatePayload(form, {
+      createPortalUser,
+      isCreate: modal.type === 'create',
+    });
 
     // Process preferred vehicle types
     if (typeof payload.preferred_vehicle_types === 'string') {
@@ -327,8 +313,9 @@ const Consignors = () => {
       createMutation.mutate(payload, {
         onSuccess: () => closeModal(),
         onError: (err) => {
-          if (err.response?.status === 400 && err.response.data?.details) {
-            setErrors(err.response.data.details);
+          const fieldErrors = flattenValidationErrors(err.response?.data);
+          if (err.response?.status === 400 && fieldErrors) {
+            setErrors(fieldErrors);
           } else {
             setErrors(prev => ({ ...prev, _generic: `Create Failed: ${err.response?.data?.detail || err.message}` }));
           }
@@ -345,8 +332,9 @@ const Consignors = () => {
         {
           onSuccess: () => closeModal(),
           onError: (err) => {
-            if (err.response?.status === 400 && err.response.data?.details) {
-              setErrors(err.response.data.details);
+            const fieldErrors = flattenValidationErrors(err.response?.data);
+            if (err.response?.status === 400 && fieldErrors) {
+              setErrors(fieldErrors);
             } else {
               setErrors(prev => ({ ...prev, _generic: `Update Failed: ${err.response?.data?.detail || err.message}` }));
             }
@@ -677,13 +665,7 @@ const Consignors = () => {
             <Field label="Legal Name" required error={errors.legal_name}>
               <Input
                 value={form.legal_name || ''}
-                onChange={e => {
-                  const val = e.target.value;
-                  setField('legal_name', val);
-                  const match = eligibleCustomers.find(c => c.legal_name?.toLowerCase() === val.toLowerCase());
-                  if (match) setField('customer_id', match.id);
-                  else setField('customer_id', '');
-                }}
+                onChange={e => setField('legal_name', e.target.value)}
                 disabled={modal.type === 'edit' || modal.type === 'view'}
                 placeholder="Enter customer legal name..."
                 className="bg-white"
@@ -756,7 +738,7 @@ const Consignors = () => {
               <Sel
                 value={form.warehouse_address || ''}
                 onChange={(e) => setField('warehouse_address', e.target.value)}
-                disabled={modal.type === 'view'}
+                disabled={modal.type === 'view' || (modal.type === 'create' && !form.customer_id)}
               >
                 <option value="">-- Select Warehouse Address --</option>
                 {isCustomerAddressesLoading ? (
@@ -769,6 +751,9 @@ const Consignors = () => {
                   ))
                 )}
               </Sel>
+              <p className="mt-1 text-[11px] text-gray-500 leading-relaxed">
+                Addresses are not typed here. Open <strong>Customers → select customer → Stored Addresses → Add Address</strong> (use type WAREHOUSE), then edit this consignor and pick it from the dropdown.
+              </p>
             </Field>
 
           </div>
@@ -839,7 +824,7 @@ const ConsignorOverview = ({ consignor: c, onEdit }) => (
 
 
     <div className="pt-3 border-t border-gray-100 flex justify-end items-center gap-4">
-      <p className="text-[10px] text-gray-400 font-mono italic mr-auto">Created: {c.created_at ? new Date(c.created_at).toLocaleString() : '—'}</p>
+      <p className="text-[10px] text-gray-400 font-mono italic mr-auto">Created: {c.created_at ? formatDateTime(c.created_at) : '—'}</p>
     </div>
   </div>
 );

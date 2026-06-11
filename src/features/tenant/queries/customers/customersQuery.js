@@ -23,20 +23,24 @@ export const customerKeys = {
   agents: () => ['agents'],
 }
 
+import { flattenValidationErrors } from '../../components/customers/Common/customerCreatePayload'
+
 // ─── ERROR HANDLER ───────────────────────────────────────────────────────────
 const handleApiError = (error, customMessage) => {
   const data = error.response?.data;
-  
-  // If it's a validation error with field details, we let the component handle it 
-  // via local state rather than showing a generic toast.
-  if (error.response?.status === 400 && data?.details) {
-    console.error(`Validation Error [${customMessage}]:`, data.details);
-    return; 
+
+  if (error.response?.status === 400) {
+    const fieldErrors = flattenValidationErrors(data);
+    if (fieldErrors) {
+      const first = Object.values(fieldErrors)[0];
+      toast.error(first || customMessage);
+      console.error(`Validation Error [${customMessage}]:`, fieldErrors);
+      return;
+    }
   }
 
-  const resData = error.response?.data;
-  const message = resData?.message || resData?.detail || error.message || customMessage;
-  toast.error(message);
+  const message = data?.message || data?.detail || error.message || customMessage;
+  toast.error(typeof message === 'string' ? message : customMessage);
   console.error(`API Error [${customMessage}]:`, error);
 };
 

@@ -12,6 +12,7 @@ import {
   Modal, Field, Input, Sel, Section,
   RelationshipManagementFields, CreatePortalUserSection
 } from './CustomerCommon';
+import { flattenValidationErrors } from './customerCreatePayload';
 
 export const EMPTY_FORM = {
   legal_name: '',
@@ -92,7 +93,6 @@ export const CustomerFormModal = ({ initial, onClose, onSuccess }) => {
         map[String(uid)] = name;
       }
     });
-    console.log('Global UserToCustomerMap Built:', map);
     return map;
   }, [allEntities]);
 
@@ -217,9 +217,15 @@ export const CustomerFormModal = ({ initial, onClose, onSuccess }) => {
     if (!validate()) return;
     const payload = { ...form };
 
-    if (payload.credit_limit) payload.credit_limit = String(payload.credit_limit);
-    if (payload.credit_score) payload.credit_score = Number(payload.credit_score);
-    else delete payload.credit_score;
+    if (payload.credit_limit === '' || payload.credit_limit == null) delete payload.credit_limit;
+    else payload.credit_limit = String(payload.credit_limit);
+
+    if (payload.credit_score === '' || payload.credit_score == null) delete payload.credit_score;
+    else payload.credit_score = Number(payload.credit_score);
+
+    ['credit_rating', 'payment_terms', 'registration_number', 'website', 'notes', 'business_type', 'industry_sector', 'trading_name'].forEach((key) => {
+      if (payload[key] === '' || payload[key] == null) delete payload[key];
+    });
 
     ['user_id', 'sales_person_id', 'account_manager_id', 'parent_customer_id', 'incorporation_date'].forEach(key => {
       if (typeof payload[key] === 'string' && !payload[key].trim()) payload[key] = null;
@@ -228,13 +234,12 @@ export const CustomerFormModal = ({ initial, onClose, onSuccess }) => {
     // customer_code is system-generated
     delete payload.customer_code;
 
-    // Handle nested user object
+    // Handle nested user object — backend accepts either user_id OR user, never both
     if (!createPortalUser || isEdit) {
       delete payload.user;
     } else {
-      payload.user_id = null; // Ensure user_id is null if nested user is provided
-      // Trim values in user object
-      Object.keys(payload.user).forEach(k => {
+      delete payload.user_id;
+      Object.keys(payload.user).forEach((k) => {
         if (typeof payload.user[k] === 'string') payload.user[k] = payload.user[k].trim();
       });
     }
@@ -246,9 +251,8 @@ export const CustomerFormModal = ({ initial, onClose, onSuccess }) => {
           if (onSuccess) onSuccess();
         },
         onError: (err) => {
-          if (err.response?.status === 400 && err.response.data?.details) {
-            setErrors(prev => ({ ...prev, ...err.response.data.details }));
-          }
+          const fieldErrors = flattenValidationErrors(err.response?.data);
+          if (fieldErrors) setErrors((prev) => ({ ...prev, ...fieldErrors }));
         }
       });
     } else {
@@ -258,9 +262,8 @@ export const CustomerFormModal = ({ initial, onClose, onSuccess }) => {
           if (onSuccess) onSuccess();
         },
         onError: (err) => {
-          if (err.response?.status === 400 && err.response.data?.details) {
-            setErrors(prev => ({ ...prev, ...err.response.data.details }));
-          }
+          const fieldErrors = flattenValidationErrors(err.response?.data);
+          if (fieldErrors) setErrors((prev) => ({ ...prev, ...fieldErrors }));
         }
       });
     }
@@ -353,8 +356,8 @@ export const CustomerFormModal = ({ initial, onClose, onSuccess }) => {
         <Section title="Financial Details" className="col-span-2" />
 
         <Field label="Credit Limit (₹)">
-          <Input type="number" value={form.credit_limit} onChange={e => setField('credit_limit', e.target.value)}
-            placeholder="e.g. 1000000" />
+          <Input type="number" value={form.credit_limit || ''} onChange={e => setField('credit_limit', e.target.value)}
+            placeholder="Optional — e.g. 1000000" />
         </Field>
         <Field label="Customer Tier">
           <Sel value={form.customer_tier} onChange={e => setField('customer_tier', e.target.value)}>
@@ -365,16 +368,16 @@ export const CustomerFormModal = ({ initial, onClose, onSuccess }) => {
           </Sel>
         </Field>
         <Field label="Payment Terms">
-          <Input value={form.payment_terms} onChange={e => setField('payment_terms', e.target.value)}
-            placeholder="e.g. Net 30" />
+          <Input value={form.payment_terms || ''} onChange={e => setField('payment_terms', e.target.value)}
+            placeholder="Optional — e.g. Net 30" />
         </Field>
         <Field label="Credit Rating">
-          <Input value={form.credit_rating} onChange={e => setField('credit_rating', e.target.value)}
-            placeholder="e.g. A+, BBB" />
+          <Input value={form.credit_rating || ''} onChange={e => setField('credit_rating', e.target.value)}
+            placeholder="Optional — e.g. A+, BBB" />
         </Field>
         <Field label="Credit Score">
-          <Input type="number" value={form.credit_score} onChange={e => setField('credit_score', e.target.value)}
-            placeholder="e.g. 780" />
+          <Input type="number" value={form.credit_score || ''} onChange={e => setField('credit_score', e.target.value)}
+            placeholder="Optional — e.g. 780" />
         </Field>
 
         <Section title="Additional Info" className="col-span-2" />

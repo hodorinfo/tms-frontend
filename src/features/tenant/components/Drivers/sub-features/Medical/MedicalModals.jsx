@@ -12,6 +12,7 @@ import {
   useDeleteMedicalRecord,
 } from '../../../../queries/drivers/trainingAndMedicalQuery';
 import DriverSelect from '../../common/DriverSelect';
+import { formatDateTime } from '@/utils/dateFormat';
 import { VERIFICATION_STATUS } from '../../common/constants';
 
 // Shared Form Fields for Medical
@@ -376,10 +377,7 @@ export const ViewMedicalModal = ({ record, driverName, employeeId, onClose }) =>
            <LabelValue label="Certificate File" value={record.certificate_url} isLink />
            <LabelValue 
              label="Record Created At" 
-             value={record.created_at ? new Date(record.created_at).toLocaleString('en-GB', { 
-               day: '2-digit', month: 'short', year: 'numeric', 
-               hour: '2-digit', minute: '2-digit', hour12: true 
-             }) : '—'} 
+             value={record.created_at ? formatDateTime(record.created_at) : '—'} 
            />
         </div>
 

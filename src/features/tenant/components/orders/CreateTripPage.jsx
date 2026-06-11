@@ -1,16 +1,36 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useQueries } from '@tanstack/react-query';
 import { 
   ChevronLeft, ChevronRight, Save, X, FileText, Truck, 
   MapPin, Gauge, DollarSign, CheckCircle2, AlertCircle, GripVertical, Circle, Package
 } from 'lucide-react';
-import { useCreateTrip, useOrders, useTrips } from '../../queries/orders/ordersQuery';
+import { useCreateTrip, useOrders, useTrips, orderKeys } from '../../queries/orders/ordersQuery';
 import { useDrivers } from '../../queries/drivers/driverCoreQuery';
 import { useVehicles } from '../../queries/vehicles/vehicleQuery';
 import { useVehicleTypes } from '../../queries/vehicles/vehicletypeQuery';
-import { tripsApi } from '../../api/orders/ordersEndpoint';
+import { toast } from 'react-hot-toast';
+import { tripsApi, ordersApi } from '../../api/orders/ordersEndpoint';
 import LRTabStrip from './trip/LRTabStrip';
 import ScopeBadge from './trip/ScopeBadge';
+import {
+  toInputDate,
+  formatDate,
+  formatDateTime,
+  DATE_INPUT_PLACEHOLDER,
+} from '@/utils/dateFormat';
+
+/** Shows selected date in dd/MM/yyyy below native date inputs. */
+const DateFieldHint = ({ value, prefix }) => {
+  if (!value) return null;
+  return (
+    <p className="text-[10px] text-gray-500 mt-1">
+      {prefix ? `${prefix} ` : ''}
+      <span className="font-semibold text-gray-700">{formatDate(value)}</span>
+      <span className="text-gray-400 ml-1">({DATE_INPUT_PLACEHOLDER})</span>
+    </p>
+  );
+};
 
 // --- Reusable UI Components (matching previous standardization) ---
 const formatLabel = (str) => {
@@ -53,12 +73,19 @@ const MetricsRow = ({ label, children, suffix, helpText }) => (
 );
 
 const inputClass = "w-full p-2.5 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-50 focus:border-[#4a6cf7] outline-none transition-all text-sm font-bold text-slate-600 placeholder:text-gray-300 shadow-sm";
-const buildRouteState = (orderId = null, origin = "", destination = "") => ({
+
+const buildRouteState = (
+  orderId = null,
+  origin = '',
+  destination = '',
+  scheduledPickup = null,
+  scheduledDelivery = null
+) => ({
   order_id: orderId,
   origin_address: origin,
   destination_address: destination,
-  scheduled_pickup_date: null,
-  scheduled_delivery_date: null,
+  scheduled_pickup_date: scheduledPickup,
+  scheduled_delivery_date: scheduledDelivery,
   actual_pickup_date: null,
   actual_delivery_date: null,
   start_time: null,
@@ -68,6 +95,92 @@ const buildRouteState = (orderId = null, origin = "", destination = "") => ({
     { stop_type: 'DELIVERY', location_address: destination, order_id: orderId, instructions: '', scheduled_arrival: '', scheduled_departure: '' },
   ],
 });
+
+/** Merge LR booking fields into per-LR route state (addresses + schedule dates). */
+const syncRouteFromOrder = (order, route, { onlyIfEmpty = true } = {}) => {
+  if (!order) return route;
+  const pickup = toInputDate(order.pickup_date);
+  const delivery = toInputDate(order.delivery_date);
+  const origin = order.consignor_address || '';
+  const destination = order.consignee_address || '';
+
+  const nextPickup = onlyIfEmpty && route.scheduled_pickup_date ? route.scheduled_pickup_date : (pickup || route.scheduled_pickup_date || null);
+  const nextDelivery = onlyIfEmpty && route.scheduled_delivery_date ? route.scheduled_delivery_date : (delivery || route.scheduled_delivery_date || null);
+  const nextOrigin = onlyIfEmpty && route.origin_address?.trim() ? route.origin_address : (origin || route.origin_address || '');
+  const nextDestination = onlyIfEmpty && route.destination_address?.trim() ? route.destination_address : (destination || route.destination_address || '');
+
+  const stops = [...(route.stops || [])];
+  if (stops.length > 0) {
+    stops[0] = {
+      ...stops[0],
+      stop_type: 'PICKUP',
+      location_address: nextOrigin,
+      order_id: route.order_id || order.id,
+    };
+  }
+  if (stops.length > 1) {
+    const lastIdx = stops.length - 1;
+    stops[lastIdx] = {
+      ...stops[lastIdx],
+      stop_type: 'DELIVERY',
+      location_address: nextDestination,
+      order_id: route.order_id || order.id,
+    };
+  }
+
+  return {
+    ...route,
+    order_id: route.order_id || order.id,
+    origin_address: nextOrigin,
+    destination_address: nextDestination,
+    scheduled_pickup_date: nextPickup,
+    scheduled_delivery_date: nextDelivery,
+    stops,
+  };
+};
+
+const DEFAULT_LR_FINANCE = {
+  freight_charge: '',
+  accessorial_charge: '',
+  tax: '',
+  bill_amount: '',
+  booked_price: '',
+  tds_percentage: '0',
+  tds_amount: '',
+  broker_commission: '',
+  net_payable: '',
+  incentive_amount: '',
+  late_fee: '',
+  part_load_charge: '',
+  damage_amount: '',
+  payment_received_amount: '',
+  payment_received_date: null,
+  pod_received_date: null,
+  is_billed: false,
+  is_paid: false,
+};
+
+const parseMoney = (v) => {
+  const n = Number.parseFloat(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const calcLRFinance = (lrf, ownershipType) => {
+  const bill = (
+    parseMoney(lrf.freight_charge) +
+    parseMoney(lrf.accessorial_charge) +
+    parseMoney(lrf.tax)
+  ).toFixed(2);
+  const isHired = ownershipType === 'HIRED_CARRIER';
+  const tds = isHired
+    ? ((parseMoney(lrf.booked_price) * parseMoney(lrf.tds_percentage)) / 100).toFixed(2)
+    : '0';
+  const net = isHired
+    ? (parseMoney(lrf.booked_price) - parseMoney(tds) - parseMoney(lrf.broker_commission)).toFixed(2)
+    : '0';
+  return { ...lrf, bill_amount: bill, tds_amount: tds, net_payable: net };
+};
+
 const TRIP_STATUS_OPTIONS = [
   { value: 'CREATED', label: 'Created' },
   { value: 'ASSIGNED', label: 'Assigned' },
@@ -126,6 +239,7 @@ export default function CreateTripPage() {
 
   const [formData, setFormData] = useState({
     order_id: "", order_ids: [], reference_number: "", trip_type: "FTL", status: "CREATED",
+    vehicle_ownership_type: "OWN_FLEET",
     primary_vehicle_id: null, vehicle_number: "", vehicle_type_code: "", vehicle_owner_name: "",
     primary_driver_id: null, alternate_vehicle_id: null, alternate_driver_id: null,
     origin_address: "", destination_address: "",
@@ -136,14 +250,12 @@ export default function CreateTripPage() {
     total_distance_km: null, start_odometer_km: null, end_odometer_km: null,
     estimated_fuel_liters: null, actual_fuel_liters: null, fuel_rate_per_liter: null,
     damage_count: 0, pod_turnaround_days: null,
-    booked_price: null, total_freight_charge: "0.00", total_accessorial_charge: "0.00", total_tax: "0.00",
-    tds_percentage: "0.00", tds_amount: "0.00", incentive_amount: "0.00", late_fee: "0.00",
-    part_load_charge: "0.00", damage_amount: "0.00", broker_commission: "0.00",
-    total_bill_amount: "0.00", payment_received_amount: "0.00", payment_received_date: null,
-    pod_received_date: null, is_billed: false, is_paid: false,
     remarks: "", version: 1
   });
+  const [financeByOrder, setFinanceByOrder] = useState({});
   const [fieldErrors, setFieldErrors] = useState({});
+  const [routeFieldErrors, setRouteFieldErrors] = useState({});
+  const [step3Alert, setStep3Alert] = useState('');
   const [activeRouteOrderId, setActiveRouteOrderId] = useState(null);
   const [routesByOrder, setRoutesByOrder] = useState({});
   const selectedOrders = useMemo(
@@ -151,8 +263,62 @@ export default function CreateTripPage() {
     [orders, formData.order_ids]
   );
   const selectedOrder = selectedOrders[0] || null;
+  const financeOrderQueries = useQueries({
+    queries: selectedOrders.map((order) => ({
+      queryKey: orderKeys.detail(order.id),
+      queryFn: () => ordersApi.get(order.id),
+      enabled: !!order?.id,
+      staleTime: 60_000,
+    })),
+  });
+  const financeOrderById = useMemo(
+    () =>
+      selectedOrders.reduce((acc, order, index) => {
+        acc[String(order.id)] = financeOrderQueries[index]?.data || order;
+        return acc;
+      }, {}),
+    [selectedOrders, financeOrderQueries]
+  );
+  const activeFinanceOrder =
+    financeOrderById[String(activeRouteOrderId)] ||
+    financeOrderById[String(selectedOrder?.id)] ||
+    selectedOrder;
+  const isHiredCarrier = formData.vehicle_ownership_type === 'HIRED_CARRIER';
+  const activeFinance = calcLRFinance(
+    financeByOrder[activeRouteOrderId] || DEFAULT_LR_FINANCE,
+    formData.vehicle_ownership_type
+  );
+  const financeSummary = useMemo(() => {
+    const rows = (formData.order_ids || []).map((id) => {
+      const order = selectedOrders.find((o) => String(o.id) === String(id));
+      const fin = calcLRFinance(financeByOrder[id] || DEFAULT_LR_FINANCE, formData.vehicle_ownership_type);
+      return { id, order, fin };
+    });
+    const totals = rows.reduce(
+      (acc, { fin }) => ({
+        bill_amount: acc.bill_amount + parseMoney(fin.bill_amount),
+        booked_price: acc.booked_price + parseMoney(fin.booked_price),
+        tds_amount: acc.tds_amount + parseMoney(fin.tds_amount),
+        net_payable: acc.net_payable + parseMoney(fin.net_payable),
+        payment_received_amount: acc.payment_received_amount + parseMoney(fin.payment_received_amount),
+      }),
+      { bill_amount: 0, booked_price: 0, tds_amount: 0, net_payable: 0, payment_received_amount: 0 }
+    );
+    return { rows, totals };
+  }, [formData.order_ids, financeByOrder, selectedOrders, formData.vehicle_ownership_type]);
 
-  const hasErrors = Object.values(fieldErrors).some(err => err && err !== '');
+  /** Route schedule fields are validated per-LR in routesByOrder, not via formData fieldErrors. */
+  const ROUTE_SCOPED_ERROR_KEYS = new Set([
+    'scheduled_pickup_date',
+    'scheduled_delivery_date',
+    'actual_pickup_date',
+    'actual_delivery_date',
+    'start_time',
+    'end_time',
+  ]);
+  const hasBlockingFieldErrors = Object.entries(fieldErrors).some(
+    ([key, err]) => err && err !== '' && !ROUTE_SCOPED_ERROR_KEYS.has(key)
+  );
   const [stopErrors, setStopErrors] = useState([]);
   const [searchParams] = useSearchParams();
   const orderIdFromUrl = searchParams.get('order_id');
@@ -242,6 +408,26 @@ export default function CreateTripPage() {
         [name]: type === 'checkbox' ? checked : value
       };
 
+      if (name === 'vehicle_ownership_type' && value !== 'HIRED_CARRIER') {
+        setFinanceByOrder((prevFin) => {
+          const updated = { ...prevFin };
+          Object.keys(updated).forEach((oid) => {
+            updated[oid] = calcLRFinance(
+              {
+                ...updated[oid],
+                booked_price: '',
+                tds_percentage: '0',
+                tds_amount: '0',
+                broker_commission: '',
+                net_payable: '0',
+              },
+              value
+            );
+          });
+          return updated;
+        });
+      }
+
       // Auto-fill vehicle details when primary_vehicle_id changes
       if (name === 'primary_vehicle_id' && value) {
         const selectedVehicle = vehicles.find(v => String(v.id) === String(value));
@@ -252,27 +438,23 @@ export default function CreateTripPage() {
         }
       }
 
-      const err = validateField(name, next[name], next);
+      const err = ROUTE_SCOPED_ERROR_KEYS.has(name) ? '' : validateField(name, next[name], next);
       const vehiclePairErr = validateField('alternate_vehicle_id', next.alternate_vehicle_id, next);
       const driverPairErr = validateField('alternate_driver_id', next.alternate_driver_id, next);
-      const scheduledDateErr = validateField('scheduled_delivery_date', next.scheduled_delivery_date, next);
-      const actualDateErr = validateField('actual_delivery_date', next.actual_delivery_date, next);
-      const actualPickupErr = validateField('actual_pickup_date', next.actual_pickup_date, next);
-      const startTimeErr = validateField('start_time', next.start_time, next);
-      const endTimeErr = validateField('end_time', next.end_time, next);
-      setFieldErrors((p) => ({
-        ...p,
-        [name]: err,
-        primary_vehicle_id: vehiclePairErr,
-        alternate_vehicle_id: vehiclePairErr,
-        primary_driver_id: driverPairErr,
-        alternate_driver_id: driverPairErr,
-        scheduled_delivery_date: scheduledDateErr,
-        actual_pickup_date: actualPickupErr,
-        actual_delivery_date: actualDateErr,
-        start_time: startTimeErr,
-        end_time: endTimeErr,
-      }));
+      setFieldErrors((p) => {
+        const merged = {
+          ...p,
+          [name]: err,
+          primary_vehicle_id: vehiclePairErr,
+          alternate_vehicle_id: vehiclePairErr,
+          primary_driver_id: driverPairErr,
+          alternate_driver_id: driverPairErr,
+        };
+        ROUTE_SCOPED_ERROR_KEYS.forEach((key) => {
+          delete merged[key];
+        });
+        return merged;
+      });
       return next;
     });
   };
@@ -283,6 +465,8 @@ export default function CreateTripPage() {
     const lastOrder = selected[selected.length - 1] || firstOrder;
     const newOrigin = firstOrder?.consignor_address || "";
     const newDest = lastOrder?.consignee_address || "";
+    const newPickup = toInputDate(firstOrder?.pickup_date);
+    const newDelivery = toInputDate(lastOrder?.delivery_date);
 
     setFormData(prev => ({
       ...prev,
@@ -295,58 +479,361 @@ export default function CreateTripPage() {
       vehicle_type_code: firstOrder ? (firstOrder.vehicle_type_preference || prev.vehicle_type_code || '') : prev.vehicle_type_code,
       origin_address: newOrigin,
       destination_address: newDest,
+      scheduled_pickup_date: newPickup,
+      scheduled_delivery_date: newDelivery,
     }));
     setRoutesByOrder(prev => {
       const next = {};
-      ids.forEach((id, index) => {
+      ids.forEach((id) => {
         const order = selected.find(o => String(o.id) === String(id));
-        const fallbackOrigin = order?.consignor_address || "";
-        const fallbackDestination = order?.consignee_address || "";
-        next[id] = prev[id] || buildRouteState(id, fallbackOrigin, fallbackDestination);
+        const pickup = toInputDate(order?.pickup_date);
+        const delivery = toInputDate(order?.delivery_date);
+        const base =
+          prev[id] ||
+          buildRouteState(
+            id,
+            order?.consignor_address || '',
+            order?.consignee_address || '',
+            pickup,
+            delivery
+          );
+        next[id] = syncRouteFromOrder(order, base, { onlyIfEmpty: Boolean(prev[id]) });
       });
       return next;
     });
     setActiveRouteOrderId(ids[0] || null);
+    setFinanceByOrder((prev) => {
+      const next = {};
+      ids.forEach((id) => {
+        const order = selected.find((o) => String(o.id) === String(id));
+        if (prev[id]) {
+          next[id] = prev[id];
+        } else {
+          next[id] = calcLRFinance(
+            {
+              ...DEFAULT_LR_FINANCE,
+              freight_charge: order?.freight_charges != null ? String(order.freight_charges) : '',
+            },
+            formData.vehicle_ownership_type
+          );
+        }
+      });
+      return next;
+    });
+    setFieldErrors((p) => {
+      const merged = { ...p };
+      ROUTE_SCOPED_ERROR_KEYS.forEach((key) => {
+        delete merged[key];
+      });
+      return merged;
+    });
   };
 
-  const validateStops = (stops = []) => {
-    const allStops = [...(stops || []).filter(s => s.location_address?.trim())].map((s, idx) => ({ ...s, idx }));
+  const handleFinanceFieldChange = (orderId, name, value) => {
+    setFinanceByOrder((prev) => {
+      const current = prev[orderId] || { ...DEFAULT_LR_FINANCE };
+      const updated = calcLRFinance(
+        { ...current, [name]: value },
+        formData.vehicle_ownership_type
+      );
+      return { ...prev, [orderId]: updated };
+    });
+  };
 
-    const pickupIndices = allStops.filter((s) => s.stop_type === 'PICKUP').map((s) => s.idx);
-    const deliveryIndices = allStops.filter((s) => s.stop_type === 'DELIVERY').map((s) => s.idx);
-    
+  const handleOwnershipChange = (value) => {
+    setFormData((prev) => ({ ...prev, vehicle_ownership_type: value }));
+    if (value !== 'HIRED_CARRIER') {
+      setFinanceByOrder((prevFin) => {
+        const updated = { ...prevFin };
+        Object.keys(updated).forEach((oid) => {
+          updated[oid] = calcLRFinance(
+            {
+              ...updated[oid],
+              booked_price: '',
+              tds_percentage: '0',
+              tds_amount: '0',
+              broker_commission: '',
+              net_payable: '0',
+            },
+            value
+          );
+        });
+        return updated;
+      });
+    }
+  };
+
+  // When switching LR tab on Route & Schedule, fill missing route fields from that LR.
+  useEffect(() => {
+    if (!activeRouteOrderId) return;
+    const order = selectedOrders.find((o) => String(o.id) === String(activeRouteOrderId));
+    if (!order) return;
+    setRoutesByOrder((prev) => {
+      const current = prev[activeRouteOrderId];
+      if (!current) return prev;
+      const synced = syncRouteFromOrder(order, current, { onlyIfEmpty: true });
+      if (
+        synced.origin_address === current.origin_address &&
+        synced.destination_address === current.destination_address &&
+        synced.scheduled_pickup_date === current.scheduled_pickup_date &&
+        synced.scheduled_delivery_date === current.scheduled_delivery_date
+      ) {
+        return prev;
+      }
+      return { ...prev, [activeRouteOrderId]: synced };
+    });
+  }, [activeRouteOrderId, selectedOrders]);
+
+  const enrichStopsForValidation = (stops = [], route = {}) => {
+    const list = stops || [];
+    return list.map((stop, idx) => {
+      let location = (stop.location_address || '').trim();
+      if (!location && idx === 0) location = (route.origin_address || '').trim();
+      if (!location && idx === list.length - 1 && list.length > 1) {
+        location = (route.destination_address || '').trim();
+      }
+      return { ...stop, location_address: location, idx };
+    });
+  };
+
+  const computeStopErrors = (stops = [], route = {}) => {
+    const enriched = enrichStopsForValidation(stops, route);
+    const withAddress = enriched.filter((s) => s.location_address);
+
+    const pickupIndices = withAddress.filter((s) => s.stop_type === 'PICKUP').map((s) => s.idx);
+    const deliveryIndices = withAddress.filter((s) => s.stop_type === 'DELIVERY').map((s) => s.idx);
+
     const errors = [];
     if (pickupIndices.length === 0) errors.push('Add at least one pickup stop (Origin or stop).');
     if (deliveryIndices.length === 0) errors.push('Add at least one delivery stop (Destination or stop).');
-    
+
     if (pickupIndices.length > 0 && deliveryIndices.length > 0) {
       const lastPickupIdx = Math.max(...pickupIndices);
       const invalidDelivery = deliveryIndices.some((i) => i <= lastPickupIdx);
       if (invalidDelivery) errors.push('All delivery stops must come after pickup stops.');
     }
+
+    enriched.forEach((stop) => {
+      const isMiddleRow = stop.idx > 0 && stop.idx < enriched.length - 1;
+      const hasPartialData =
+        Boolean(stop.instructions?.trim()) ||
+        Boolean(stop.scheduled_arrival) ||
+        Boolean(stop.scheduled_departure);
+      if (isMiddleRow && (hasPartialData || stop.stop_type !== 'PICKUP') && !stop.location_address) {
+        errors.push(`Stop #${stop.idx + 1}: location address is required.`);
+      }
+      if (
+        stop.scheduled_arrival &&
+        stop.scheduled_departure &&
+        stop.scheduled_departure < stop.scheduled_arrival
+      ) {
+        errors.push(`Stop #${stop.idx + 1}: ETD cannot be before ETA.`);
+      }
+    });
+
+    return errors;
+  };
+
+  const validateStops = (stops = [], route = {}) => {
+    const errors = computeStopErrors(stops, route);
     setStopErrors(errors);
     return errors.length === 0;
   };
 
+  /** Match order-service TripWriteSerializer: trip dates must stay within each linked LR booking window. */
+  const validateRouteAgainstLinkedOrder = (route = {}, order = null) => {
+    const errors = {};
+    if (!order) return errors;
+    const orderPickup = toInputDate(order.pickup_date);
+    const orderDelivery = toInputDate(order.delivery_date);
+    if (route.scheduled_pickup_date && orderPickup && route.scheduled_pickup_date < orderPickup) {
+      errors.scheduled_pickup_date = `Cannot be before LR pickup date (${formatDate(orderPickup)}).`;
+    }
+    if (route.scheduled_delivery_date && orderDelivery && route.scheduled_delivery_date > orderDelivery) {
+      errors.scheduled_delivery_date = `Cannot be after LR delivery date (${formatDate(orderDelivery)}).`;
+    }
+    return errors;
+  };
+
+  const validateTripScheduleAgainstAllOrders = (pickup, delivery, orderIds = []) => {
+    const messages = [];
+    const fieldErrorsByOrder = {};
+    orderIds.forEach((id) => {
+      const order = selectedOrders.find((o) => String(o.id) === String(id));
+      if (!order) return;
+      const lrLabel = order.lr_number || String(id).slice(-8);
+      const orderPickup = toInputDate(order.pickup_date);
+      const orderDelivery = toInputDate(order.delivery_date);
+      const key = String(id);
+      if (pickup && orderPickup && pickup < orderPickup) {
+        messages.push(
+          `LR ${lrLabel}: Trip pickup cannot be before order pickup date (${formatDate(orderPickup)}).`
+        );
+        fieldErrorsByOrder[key] = {
+          ...(fieldErrorsByOrder[key] || {}),
+          scheduled_pickup_date: `Must be on or after LR pickup (${formatDate(orderPickup)}).`,
+        };
+      }
+      if (delivery && orderDelivery && delivery > orderDelivery) {
+        messages.push(
+          `LR ${lrLabel}: Trip delivery cannot be after order delivery date (${formatDate(orderDelivery)}).`
+        );
+        fieldErrorsByOrder[key] = {
+          ...(fieldErrorsByOrder[key] || {}),
+          scheduled_delivery_date: `Must be on or before LR delivery (${formatDate(orderDelivery)}).`,
+        };
+      }
+    });
+    return { messages, fieldErrorsByOrder };
+  };
+
+  const validateRouteSchedule = (route = {}, order = null) => {
+    const errors = {};
+    const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
+
+    if (!route.origin_address?.trim()) errors.origin_address = 'Origin address is required.';
+    if (!route.destination_address?.trim()) errors.destination_address = 'Destination address is required.';
+    if (!route.scheduled_pickup_date) errors.scheduled_pickup_date = 'Scheduled pickup date is required.';
+    if (!route.scheduled_delivery_date) errors.scheduled_delivery_date = 'Scheduled delivery date is required.';
+    if (
+      route.scheduled_pickup_date &&
+      route.scheduled_delivery_date &&
+      route.scheduled_delivery_date < route.scheduled_pickup_date
+    ) {
+      errors.scheduled_delivery_date = 'Scheduled delivery cannot be before scheduled pickup.';
+    }
+    if (route.actual_pickup_date && route.actual_pickup_date > today) {
+      errors.actual_pickup_date = 'Actual pickup cannot be in the future.';
+    }
+    if (route.actual_delivery_date && route.actual_delivery_date > today) {
+      errors.actual_delivery_date = 'Actual delivery cannot be in the future.';
+    }
+    if (
+      route.actual_pickup_date &&
+      route.actual_delivery_date &&
+      route.actual_delivery_date < route.actual_pickup_date
+    ) {
+      errors.actual_delivery_date = 'Actual delivery cannot be before actual pickup.';
+    }
+    if (route.start_time && route.end_time && route.end_time < route.start_time) {
+      errors.end_time = 'End time cannot be before start time.';
+    }
+    Object.assign(errors, validateRouteAgainstLinkedOrder(route, order));
+    return errors;
+  };
+
+  const getRouteValidationTargets = () => {
+    const ids = formData.order_ids?.length ? formData.order_ids : [];
+    if (ids.length) {
+      return ids.map((id) => ({
+        orderId: String(id),
+        route: routesByOrder[id] || buildRouteState(id),
+        lrNumber: selectedOrders.find((o) => String(o.id) === String(id))?.lr_number,
+        order: selectedOrders.find((o) => String(o.id) === String(id)),
+      }));
+    }
+    const fallbackId = activeRouteOrderId || '_route';
+    return [
+      {
+        orderId: String(fallbackId),
+        route: routesByOrder[fallbackId] || activeRoute,
+        lrNumber: null,
+      },
+    ];
+  };
+
+  const validateStep3 = () => {
+    const targets = getRouteValidationTargets();
+    const allRouteErrors = {};
+    const messages = [];
+    let firstInvalidOrderId = null;
+
+    targets.forEach(({ orderId, route, lrNumber, order }) => {
+      const stopErrs = computeStopErrors(route.stops || [], route);
+      const fieldErrs = validateRouteSchedule(route, order);
+      const prefix = lrNumber ? `LR ${lrNumber}: ` : '';
+
+      if (stopErrs.length || Object.keys(fieldErrs).length) {
+        allRouteErrors[orderId] = { ...(allRouteErrors[orderId] || {}), ...fieldErrs };
+        if (!firstInvalidOrderId) firstInvalidOrderId = orderId;
+        stopErrs.forEach((msg) => messages.push(`${prefix}${msg}`));
+        Object.values(fieldErrs).forEach((msg) => messages.push(`${prefix}${msg}`));
+      }
+    });
+
+    const primaryId = formData.order_ids?.[0];
+    if (primaryId) {
+      const tripRoute = routesByOrder[primaryId] || {};
+      const { messages: crossOrderMsgs, fieldErrorsByOrder: crossOrderFieldErrors } =
+        validateTripScheduleAgainstAllOrders(
+          tripRoute.scheduled_pickup_date,
+          tripRoute.scheduled_delivery_date,
+          formData.order_ids
+        );
+      crossOrderMsgs.forEach((msg) => messages.push(msg));
+      Object.entries(crossOrderFieldErrors).forEach(([oid, errs]) => {
+        allRouteErrors[oid] = { ...(allRouteErrors[oid] || {}), ...errs };
+        if (!firstInvalidOrderId) firstInvalidOrderId = oid;
+      });
+    }
+
+    setRouteFieldErrors(allRouteErrors);
+    if (firstInvalidOrderId) {
+      setActiveRouteOrderId(firstInvalidOrderId);
+      const activeRouteForStops = routesByOrder[firstInvalidOrderId] || activeRoute;
+      validateStops(activeRouteForStops?.stops || [], activeRouteForStops);
+      setStep3Alert(messages.slice(0, 4).join(' • '));
+      toast.error(messages[0] || 'Please fix route and schedule errors before continuing.');
+      return false;
+    }
+
+    setStep3Alert('');
+    setStopErrors([]);
+    return true;
+  };
+
+  const applyRouteFieldValidation = (orderId, route, { updateBanner = false } = {}) => {
+    if (!orderId) return;
+    const key = String(orderId);
+    const order = selectedOrders.find((o) => String(o.id) === key);
+    const fieldErrs = validateRouteSchedule(route, order);
+    const stopErrs = computeStopErrors(route.stops || [], route);
+    setRouteFieldErrors((prev) => ({ ...prev, [key]: fieldErrs }));
+    if (key === String(activeRouteOrderId)) {
+      setStopErrors(stopErrs);
+    }
+    if (updateBanner && !Object.keys(fieldErrs).length && !stopErrs.length) {
+      setStep3Alert('');
+    }
+  };
+
   const updateActiveRoute = (updater) => {
     if (!activeRouteOrderId) return;
-    setRoutesByOrder(prev => {
+    setRoutesByOrder((prev) => {
       const current = prev[activeRouteOrderId] || buildRouteState(activeRouteOrderId);
       const nextRoute = typeof updater === 'function' ? updater(current) : updater;
+      applyRouteFieldValidation(activeRouteOrderId, nextRoute);
       return { ...prev, [activeRouteOrderId]: nextRoute };
     });
   };
 
+  const activeRouteFieldErrors = routeFieldErrors[String(activeRouteOrderId)] || {};
+  const activeScheduleOrder = selectedOrders.find((o) => String(o.id) === String(activeRouteOrderId));
+  const activeOrderPickup = toInputDate(activeScheduleOrder?.pickup_date);
+  const activeOrderDelivery = toInputDate(activeScheduleOrder?.delivery_date);
+
   const handleRouteFieldChange = (name, value) => {
-    updateActiveRoute((route) => {
-      const next = { ...route, [name]: value };
+    if (!activeRouteOrderId) return;
+    setRoutesByOrder((prev) => {
+      const current = prev[activeRouteOrderId] || buildRouteState(activeRouteOrderId);
+      const next = { ...current, [name]: value };
       if (name === 'origin_address' || name === 'destination_address') {
-        const stops = [...(route.stops || [])];
+        const stops = [...(current.stops || [])];
         if (stops.length > 0) {
           stops[0] = {
             ...stops[0],
             stop_type: 'PICKUP',
-            order_id: route.order_id || activeRouteOrderId || null,
+            order_id: current.order_id || activeRouteOrderId || null,
             location_address: name === 'origin_address' ? value : (stops[0].location_address || ''),
           };
         }
@@ -355,75 +842,118 @@ export default function CreateTripPage() {
           stops[lastIdx] = {
             ...stops[lastIdx],
             stop_type: 'DELIVERY',
-            order_id: route.order_id || activeRouteOrderId || null,
+            order_id: current.order_id || activeRouteOrderId || null,
             location_address: name === 'destination_address' ? value : (stops[lastIdx].location_address || ''),
           };
         }
         next.stops = stops;
       }
-      return next;
+      applyRouteFieldValidation(activeRouteOrderId, next);
+      return { ...prev, [activeRouteOrderId]: next };
     });
   };
 
-  useEffect(() => {
-    validateStops(activeRoute.stops || []);
-  }, [activeRouteOrderId, routesByOrder]);
-
   const handleNext = () => {
-    if (hasErrors) return;
-    if (currentStep === 3 && !validateStops(activeRoute.stops || [])) return;
-    setCurrentStep(prev => Math.min(prev + 1, steps.length));
+    if (currentStep === 3) {
+      if (!validateStep3()) return;
+      setCurrentStep((prev) => Math.min(prev + 1, steps.length));
+      return;
+    }
+    if (currentStep === 2 && hasBlockingFieldErrors) {
+      toast.error('Fix fleet and team errors before continuing.');
+      return;
+    }
+    setCurrentStep((prev) => Math.min(prev + 1, steps.length));
   };
   const handlePrev = () => setCurrentStep(prev => Math.max(prev - 1, 1));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (currentStep < steps.length) {
+      handleNext();
+      return;
+    }
+
+    const primaryOrderId = formData.order_ids?.[0] || activeRouteOrderId || null;
+    const routeKey = primaryOrderId ? String(primaryOrderId) : '_route';
+    const fallbackRoute = Object.values(routesByOrder || {}).find(Boolean) || null;
+    const primaryRoute =
+      routesByOrder[primaryOrderId] ||
+      routesByOrder[routeKey] ||
+      fallbackRoute ||
+      buildRouteState(primaryOrderId);
+
+    if (!validateStep3()) {
+      setCurrentStep(3);
+      return;
+    }
+
     const vehiclePairErr = validateField('alternate_vehicle_id', formData.alternate_vehicle_id, formData);
     const driverPairErr = validateField('alternate_driver_id', formData.alternate_driver_id, formData);
-    const scheduledDateErr = validateField('scheduled_delivery_date', formData.scheduled_delivery_date, formData);
-    const actualDateErr = validateField('actual_delivery_date', formData.actual_delivery_date, formData);
-    const actualPickupErr = validateField('actual_pickup_date', formData.actual_pickup_date, formData);
-    const startTimeErr = validateField('start_time', formData.start_time, formData);
-    const endTimeErr = validateField('end_time', formData.end_time, formData);
+    const routeTimeCtx = {
+      start_time: primaryRoute.start_time,
+      end_time: primaryRoute.end_time,
+      scheduled_pickup_date: primaryRoute.scheduled_pickup_date,
+      scheduled_delivery_date: primaryRoute.scheduled_delivery_date,
+      actual_pickup_date: primaryRoute.actual_pickup_date,
+      actual_delivery_date: primaryRoute.actual_delivery_date,
+    };
+    const scheduledDateErr = validateField('scheduled_delivery_date', primaryRoute.scheduled_delivery_date, routeTimeCtx);
+    const actualDateErr = validateField('actual_delivery_date', primaryRoute.actual_delivery_date, routeTimeCtx);
+    const actualPickupErr = validateField('actual_pickup_date', primaryRoute.actual_pickup_date, routeTimeCtx);
+    const startTimeErr = validateField('start_time', primaryRoute.start_time, routeTimeCtx);
+    const endTimeErr = validateField('end_time', primaryRoute.end_time, routeTimeCtx);
 
-    if (vehiclePairErr || driverPairErr || scheduledDateErr || actualPickupErr || actualDateErr || startTimeErr || endTimeErr) {
+    if (vehiclePairErr || driverPairErr) {
       setFieldErrors((p) => ({
         ...p,
         primary_vehicle_id: vehiclePairErr,
         alternate_vehicle_id: vehiclePairErr,
         primary_driver_id: driverPairErr,
         alternate_driver_id: driverPairErr,
-        scheduled_delivery_date: scheduledDateErr,
-        actual_pickup_date: actualPickupErr,
-        actual_delivery_date: actualDateErr,
-        start_time: startTimeErr,
-        end_time: endTimeErr,
       }));
+      toast.error(vehiclePairErr || driverPairErr || 'Fix fleet and team errors.');
+      setCurrentStep(2);
       return;
     }
-    for (const orderId of (formData.order_ids || [])) {
-      const route = routesByOrder[orderId];
-      if (!route || !validateStops(route.stops || [])) {
-        setActiveRouteOrderId(orderId);
-        return;
-      }
-    }
-    if (currentStep < steps.length) {
-      handleNext();
+    if (scheduledDateErr || actualPickupErr || actualDateErr || startTimeErr || endTimeErr) {
+      setRouteFieldErrors((p) => ({
+        ...p,
+        [routeKey]: {
+          ...(p[routeKey] || {}),
+          scheduled_delivery_date: scheduledDateErr,
+          actual_pickup_date: actualPickupErr,
+          actual_delivery_date: actualDateErr,
+          start_time: startTimeErr,
+          end_time: endTimeErr,
+        },
+      }));
+      toast.error(
+        scheduledDateErr ||
+          actualPickupErr ||
+          actualDateErr ||
+          startTimeErr ||
+          endTimeErr ||
+          'Fix route and schedule errors.'
+      );
+      setCurrentStep(3);
       return;
     }
-    const primaryOrderId = formData.order_ids?.[0] || null;
-    const fallbackRoute = Object.values(routesByOrder || {}).find(Boolean) || null;
-    const primaryRoute = routesByOrder[primaryOrderId] || fallbackRoute || buildRouteState(primaryOrderId);
     const scheduledPickupDate = primaryRoute.scheduled_pickup_date || formData.scheduled_pickup_date || null;
     const scheduledDeliveryDate = primaryRoute.scheduled_delivery_date || formData.scheduled_delivery_date || null;
 
     if (!scheduledPickupDate || !scheduledDeliveryDate) {
-      setFieldErrors((p) => ({
+      setRouteFieldErrors((p) => ({
         ...p,
-        scheduled_pickup_date: !scheduledPickupDate ? 'Scheduled pickup date is required' : '',
-        scheduled_delivery_date: !scheduledDeliveryDate ? 'Scheduled delivery date is required' : '',
+        [routeKey]: {
+          ...(p[routeKey] || {}),
+          scheduled_pickup_date: !scheduledPickupDate ? 'Scheduled pickup date is required' : '',
+          scheduled_delivery_date: !scheduledDeliveryDate ? 'Scheduled delivery date is required' : '',
+        },
       }));
+      setStep3Alert('Scheduled pickup and delivery dates are required.');
+      toast.error('Scheduled pickup and delivery dates are required.');
       setCurrentStep(3);
       return;
     }
@@ -441,6 +971,7 @@ export default function CreateTripPage() {
       ...formData,
       order_ids: formData.order_ids || [],
       order_id: formData.order_ids?.[0] || formData.order_id || null,
+      vehicle_ownership_type: formData.vehicle_ownership_type || 'OWN_FLEET',
       origin_address: primaryRoute.origin_address || null,
       destination_address: primaryRoute.destination_address || null,
       scheduled_pickup_date: scheduledPickupDate,
@@ -460,42 +991,76 @@ export default function CreateTripPage() {
         formData.damage_count === '' || formData.damage_count === null || Number.isNaN(Number.parseInt(formData.damage_count, 10))
           ? 0
           : Number.parseInt(formData.damage_count, 10),
-      booked_price: formData.booked_price === '' ? null : formData.booked_price,
-      payment_received_date: formData.payment_received_date || null,
-      pod_received_date: formData.pod_received_date || null,
+      created_date: toInputDate(formData.created_date) || new Date().toISOString().split('T')[0],
+      lr_finance: (formData.order_ids || []).map((orderId) => {
+        const fin = calcLRFinance(financeByOrder[orderId] || DEFAULT_LR_FINANCE, formData.vehicle_ownership_type);
+        const isHired = formData.vehicle_ownership_type === 'HIRED_CARRIER';
+        return {
+          order_id: orderId,
+          freight_charge: parseMoney(fin.freight_charge),
+          accessorial_charge: parseMoney(fin.accessorial_charge),
+          tax: parseMoney(fin.tax),
+          booked_price: isHired ? parseMoney(fin.booked_price) : 0,
+          tds_percentage: isHired ? parseMoney(fin.tds_percentage) : 0,
+          broker_commission: isHired ? parseMoney(fin.broker_commission) : 0,
+          incentive_amount: parseMoney(fin.incentive_amount),
+          late_fee: parseMoney(fin.late_fee),
+          part_load_charge: parseMoney(fin.part_load_charge),
+          damage_amount: parseMoney(fin.damage_amount),
+          payment_received_amount: parseMoney(fin.payment_received_amount),
+          payment_received_date: toInputDate(fin.payment_received_date) || null,
+          pod_received_date: toInputDate(fin.pod_received_date) || null,
+          is_billed: Boolean(fin.is_billed),
+          is_paid: Boolean(fin.is_paid),
+        };
+      }),
     };
+    ['lr_number', 'version'].forEach((key) => {
+      delete payload[key];
+    });
     try {
       const createdTrip = await createTripMutation.mutateAsync(payload);
       const tripId = createdTrip?.id;
 
-      if (tripId) {
-        const stopPayloads = (formData.order_ids || []).flatMap((orderId) => {
-          const route = routesByOrder[orderId];
-          return (route?.stops || []).map((s) => ({
-            ...s,
-            order_id: s.order_id || orderId,
-          }));
-        })
-          .map((s, idx) => ({
-            stop_sequence: idx + 1,
-            stop_type: s.stop_type,
-            location_address: s.location_address || '',
-            order_id: s.order_id || null,
-            instructions: s.instructions || '',
-            scheduled_arrival: s.scheduled_arrival || null,
-            scheduled_departure: s.scheduled_departure || null,
-            stop_status: 'PENDING',
-          }))
-          .filter((s) => s.location_address);
+      if (!tripId) {
+        toast.error('Trip could not be created. Please try again.');
+        return;
+      }
 
+      const stopPayloads = (formData.order_ids || []).flatMap((orderId) => {
+        const route = routesByOrder[orderId];
+        const enriched = enrichStopsForValidation(route?.stops || [], route || {});
+        return enriched.map((s) => ({
+          ...s,
+          order_id: s.order_id || orderId,
+        }));
+      })
+        .map((s, idx) => ({
+          stop_sequence: idx + 1,
+          stop_type: s.stop_type,
+          location_address: s.location_address || '',
+          order_id: s.order_id || null,
+          instructions: s.instructions || '',
+          scheduled_arrival: s.scheduled_arrival || null,
+          scheduled_departure: s.scheduled_departure || null,
+          stop_status: 'PENDING',
+        }))
+        .filter((s) => s.location_address);
+
+      try {
         for (const stop of stopPayloads) {
           await tripsApi.createStop(tripId, stop);
         }
+      } catch {
+        toast.error('Trip created, but some stops could not be saved. Opening trip detail.');
       }
 
       navigate(`/tenant/dashboard/orders/trips/${tripId}`);
-    } catch (_) {
-      // toast is already handled by query layer
+    } catch (err) {
+      const msg = err?.response?.data?.error || err?.response?.data?.detail || err?.message;
+      if (msg && typeof msg === 'string') {
+        toast.error(msg);
+      }
     }
   };
 
@@ -513,7 +1078,6 @@ export default function CreateTripPage() {
         scheduled_arrival: '',
         scheduled_departure: '',
       });
-      validateStops(next);
       return { ...route, stops: next };
     });
   };
@@ -522,7 +1086,6 @@ export default function CreateTripPage() {
     updateActiveRoute((route) => {
       const prev = route.stops || [];
       const next = prev.filter((_, i) => i !== index);
-      validateStops(next);
       return { ...route, stops: next };
     });
   };
@@ -533,7 +1096,6 @@ export default function CreateTripPage() {
       const next = prev.map((s, i) => (
         i === index ? { ...s, [key]: value, order_id: route.order_id || activeRouteOrderId || s.order_id || null } : s
       ));
-      validateStops(next);
       return { ...route, stops: next };
     });
   };
@@ -636,7 +1198,15 @@ export default function CreateTripPage() {
                                   handleOrdersChange(Array.from(current));
                                 }}
                               />
-                              <span>{o.lr_number} - {o.status}</span>
+                              <span>
+                                {o.lr_number} - {o.status}
+                                {o.pickup_date || o.delivery_date ? (
+                                  <span className="text-gray-400 font-normal">
+                                    {' '}
+                                    · {formatDate(o.pickup_date)} → {formatDate(o.delivery_date)}
+                                  </span>
+                                ) : null}
+                              </span>
                             </label>
                           );
                         })}
@@ -653,12 +1223,18 @@ export default function CreateTripPage() {
                       {selectedOrders.find((o) => String(o.id) === String(activeRouteOrderId)) && (
                         <div className="grid grid-cols-2 gap-3 mt-3 text-xs">
                           <div className="rounded-lg border border-amber-100 bg-amber-50 p-2">
-                            <p className="font-black text-amber-800 uppercase tracking-wider">Consignor</p>
-                            <p className="text-gray-700 mt-1">{selectedOrders.find((o) => String(o.id) === String(activeRouteOrderId))?.consignor_address || '—'}</p>
+                            <p className="font-black text-amber-800 uppercase tracking-wider">Pickup (from LR)</p>
+                            <p className="text-gray-700 mt-1 font-semibold">
+                              {formatDate(selectedOrders.find((o) => String(o.id) === String(activeRouteOrderId))?.pickup_date) || '—'}
+                            </p>
+                            <p className="text-gray-600 mt-1">{selectedOrders.find((o) => String(o.id) === String(activeRouteOrderId))?.consignor_address || '—'}</p>
                           </div>
                           <div className="rounded-lg border border-amber-100 bg-amber-50 p-2">
-                            <p className="font-black text-amber-800 uppercase tracking-wider">Consignee</p>
-                            <p className="text-gray-700 mt-1">{selectedOrders.find((o) => String(o.id) === String(activeRouteOrderId))?.consignee_address || '—'}</p>
+                            <p className="font-black text-amber-800 uppercase tracking-wider">Delivery (from LR)</p>
+                            <p className="text-gray-700 mt-1 font-semibold">
+                              {formatDate(selectedOrders.find((o) => String(o.id) === String(activeRouteOrderId))?.delivery_date) || '—'}
+                            </p>
+                            <p className="text-gray-600 mt-1">{selectedOrders.find((o) => String(o.id) === String(activeRouteOrderId))?.consignee_address || '—'}</p>
                           </div>
                         </div>
                       )}
@@ -716,6 +1292,40 @@ export default function CreateTripPage() {
                     <ScopeBadge variant="trip" />
                   </div>
                   <p className="text-xs font-bold text-violet-700 bg-violet-50 border border-violet-100 rounded-lg px-3 py-2 inline-block">Applies to all linked LRs</p>
+
+                  <GroupHeader title="Vehicle Ownership" />
+                  <div className="border-x border-b border-gray-200 rounded-b-2xl bg-white px-5 py-4 mb-6 space-y-3">
+                    <div className="flex flex-wrap gap-6">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="vehicle_ownership_type"
+                          value="OWN_FLEET"
+                          checked={formData.vehicle_ownership_type === 'OWN_FLEET'}
+                          onChange={() => handleOwnershipChange('OWN_FLEET')}
+                          className="w-4 h-4 text-[#4a6cf7] border-gray-300"
+                        />
+                        <span className="text-sm font-bold text-gray-700">Own Fleet</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="vehicle_ownership_type"
+                          value="HIRED_CARRIER"
+                          checked={formData.vehicle_ownership_type === 'HIRED_CARRIER'}
+                          onChange={() => handleOwnershipChange('HIRED_CARRIER')}
+                          className="w-4 h-4 text-[#4a6cf7] border-gray-300"
+                        />
+                        <span className="text-sm font-bold text-gray-700">Hired Carrier</span>
+                      </label>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      {isHiredCarrier
+                        ? 'External carrier hired. Booked price, TDS, and broker commission are entered per LR in Step 5.'
+                        : 'Your company owns this truck. Carrier billing is not applicable — fuel and driver costs go via Expenses.'}
+                    </p>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-8">
                     <FieldGroup label="primary_vehicle_id">
                       <select name="primary_vehicle_id" className={inputClass} value={formData.primary_vehicle_id || ""} onChange={handleInputChange}>
@@ -790,7 +1400,17 @@ export default function CreateTripPage() {
                         ))}
                       </select>
                      </FieldGroup>
-                     <FieldGroup label="vehicle_owner_name"><input type="text" name="vehicle_owner_name" className={inputClass} value={formData.vehicle_owner_name} onChange={handleInputChange} /></FieldGroup>
+                     <FieldGroup label="vehicle_owner_name">
+                       <input
+                         type="text"
+                         name="vehicle_owner_name"
+                         className={`${inputClass}${!isHiredCarrier ? ' !bg-gray-50' : ''}`}
+                         value={formData.vehicle_owner_name}
+                         onChange={handleInputChange}
+                         readOnly={!isHiredCarrier}
+                         placeholder={isHiredCarrier ? 'Carrier / owner name' : 'Auto from company'}
+                       />
+                     </FieldGroup>
                   </div>
                 </div>
               )}
@@ -803,12 +1423,57 @@ export default function CreateTripPage() {
                     <ScopeBadge variant="lr" />
                   </div>
                   {(formData.order_ids || []).length > 0 && (
-                    <div className="mb-2">
+                    <div className="mb-2 space-y-3">
                       <LRTabStrip
                         linkedOrders={selectedOrders.map((o) => ({ order_id: o.id, lr_number: o.lr_number }))}
                         activeOrderId={activeRouteOrderId}
-                        onChange={setActiveRouteOrderId}
+                        onChange={(id) => {
+                          setActiveRouteOrderId(id);
+                          setStep3Alert('');
+                        }}
                       />
+                      {activeScheduleOrder && (
+                        <div className="grid grid-cols-2 gap-3 text-xs">
+                          <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-2">
+                            <p className="font-black text-blue-800 uppercase tracking-wider">LR Pickup Date</p>
+                            <p className="text-gray-800 mt-1 font-semibold">
+                              {activeScheduleOrder?.pickup_date ? formatDate(activeScheduleOrder.pickup_date) : '—'}
+                            </p>
+                            <p className="text-[10px] text-blue-700 mt-1">Trip pickup must be on or after this date.</p>
+                          </div>
+                          <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-2">
+                            <p className="font-black text-blue-800 uppercase tracking-wider">LR Delivery Date</p>
+                            <p className="text-gray-800 mt-1 font-semibold">
+                              {activeScheduleOrder?.delivery_date ? formatDate(activeScheduleOrder.delivery_date) : '—'}
+                            </p>
+                            <p className="text-[10px] text-blue-700 mt-1">Trip delivery must be on or before this date.</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {(formData.order_ids || []).length > 1 && (
+                    <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 font-medium">
+                      This trip uses the <strong>first linked LR</strong> schedule when saving
+                      {primaryRoutePreview.scheduled_pickup_date || primaryRoutePreview.scheduled_delivery_date ? (
+                        <>
+                          {' '}
+                          (
+                          {formatDate(primaryRoutePreview.scheduled_pickup_date)} →{' '}
+                          {formatDate(primaryRoutePreview.scheduled_delivery_date)}
+                          )
+                        </>
+                      ) : null}
+                      . Those dates must be valid for every LR on the trip.
+                    </p>
+                  )}
+                  {step3Alert && (
+                    <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                      <AlertCircle size={18} className="shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold">Fix the following before continuing</p>
+                        <p className="text-xs mt-1 font-medium">{step3Alert}</p>
+                      </div>
                     </div>
                   )}
                   <div className="bg-gray-50/50 rounded-2xl p-6 border border-gray-100 flex gap-6 relative overflow-hidden group mb-8">
@@ -828,11 +1493,14 @@ export default function CreateTripPage() {
                         <textarea 
                           name="origin_address" 
                           rows="2" 
-                          className={`${inputClass} !bg-white focus:shadow-lg focus:shadow-blue-50/50 transition-all !resize-none`} 
+                          className={`${inputClass} !bg-white focus:shadow-lg focus:shadow-blue-50/50 transition-all !resize-none ${activeRouteFieldErrors.origin_address ? 'border-red-300' : ''}`} 
                           value={activeRoute.origin_address || ""} 
                           onChange={(e) => handleRouteFieldChange('origin_address', e.target.value)} 
                           placeholder="Enter starting point..." 
                         />
+                        {activeRouteFieldErrors.origin_address && (
+                          <p className="text-[10px] text-red-500 font-bold mt-1">{activeRouteFieldErrors.origin_address}</p>
+                        )}
                       </div>
                       <div className="relative">
                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest absolute -top-6 left-0 flex items-center gap-2">
@@ -841,11 +1509,14 @@ export default function CreateTripPage() {
                         <textarea 
                           name="destination_address" 
                           rows="2" 
-                          className={`${inputClass} !bg-white focus:shadow-lg focus:shadow-emerald-50/50 transition-all !resize-none`} 
+                          className={`${inputClass} !bg-white focus:shadow-lg focus:shadow-emerald-50/50 transition-all !resize-none ${activeRouteFieldErrors.destination_address ? 'border-red-300' : ''}`} 
                           value={activeRoute.destination_address || ""} 
                           onChange={(e) => handleRouteFieldChange('destination_address', e.target.value)} 
                           placeholder="Enter drop-off point..." 
                         />
+                        {activeRouteFieldErrors.destination_address && (
+                          <p className="text-[10px] text-red-500 font-bold mt-1">{activeRouteFieldErrors.destination_address}</p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -942,29 +1613,69 @@ export default function CreateTripPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-8 border-t border-gray-50 pt-8 mt-8">
                     <div className="grid grid-cols-2 gap-4">
-                      <FieldGroup label="scheduled_pickup_date" error={fieldErrors.scheduled_pickup_date}>
-                        <input type="date" name="scheduled_pickup_date" className={inputClass} value={activeRoute.scheduled_pickup_date || ""} onChange={(e) => handleRouteFieldChange('scheduled_pickup_date', e.target.value)} />
+                      <FieldGroup label="scheduled_pickup_date" required error={activeRouteFieldErrors.scheduled_pickup_date}>
+                        <input
+                          type="date"
+                          name="scheduled_pickup_date"
+                          className={inputClass}
+                          min={activeOrderPickup || undefined}
+                          value={activeRoute.scheduled_pickup_date || ""}
+                          onChange={(e) => handleRouteFieldChange('scheduled_pickup_date', e.target.value)}
+                        />
+                        {activeScheduleOrder?.pickup_date && (
+                          <p className="text-[10px] text-gray-500 mt-1">
+                            Earliest allowed: {formatDate(activeScheduleOrder.pickup_date)}
+                          </p>
+                        )}
+                        <DateFieldHint value={activeRoute.scheduled_pickup_date} prefix="Selected" />
                       </FieldGroup>
-                      <FieldGroup label="scheduled_delivery_date" error={fieldErrors.scheduled_delivery_date}>
-                        <input type="date" name="scheduled_delivery_date" className={inputClass} value={activeRoute.scheduled_delivery_date || ""} onChange={(e) => handleRouteFieldChange('scheduled_delivery_date', e.target.value)} />
+                      <FieldGroup label="scheduled_delivery_date" required error={activeRouteFieldErrors.scheduled_delivery_date}>
+                        <input
+                          type="date"
+                          name="scheduled_delivery_date"
+                          className={inputClass}
+                          min={activeRoute.scheduled_pickup_date || activeOrderPickup || undefined}
+                          max={activeOrderDelivery || undefined}
+                          value={activeRoute.scheduled_delivery_date || ""}
+                          onChange={(e) => handleRouteFieldChange('scheduled_delivery_date', e.target.value)}
+                        />
+                        {activeScheduleOrder?.delivery_date && (
+                          <p className="text-[10px] text-gray-500 mt-1">
+                            Latest allowed: {formatDate(activeScheduleOrder.delivery_date)}
+                          </p>
+                        )}
+                        <DateFieldHint value={activeRoute.scheduled_delivery_date} prefix="Selected" />
                       </FieldGroup>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                      <FieldGroup label="actual_pickup_date" error={fieldErrors.actual_pickup_date}>
+                      <FieldGroup label="actual_pickup_date" error={activeRouteFieldErrors.actual_pickup_date}>
                         <input type="date" name="actual_pickup_date" className={inputClass} value={activeRoute.actual_pickup_date || ""} onChange={(e) => handleRouteFieldChange('actual_pickup_date', e.target.value)} />
+                        <DateFieldHint value={activeRoute.actual_pickup_date} prefix="Selected" />
                       </FieldGroup>
-                      <FieldGroup label="actual_delivery_date" error={fieldErrors.actual_delivery_date}>
+                      <FieldGroup label="actual_delivery_date" error={activeRouteFieldErrors.actual_delivery_date}>
                         <input type="date" name="actual_delivery_date" className={inputClass} value={activeRoute.actual_delivery_date || ""} onChange={(e) => handleRouteFieldChange('actual_delivery_date', e.target.value)} />
+                        <DateFieldHint value={activeRoute.actual_delivery_date} prefix="Selected" />
                       </FieldGroup>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-8">
-                      <FieldGroup label="start_time" error={fieldErrors.start_time}><input type="datetime-local" name="start_time" className={inputClass} value={activeRoute.start_time || ""} onChange={(e) => handleRouteFieldChange('start_time', e.target.value)} /></FieldGroup>
-                      <FieldGroup label="end_time" error={fieldErrors.end_time}>
+                      <FieldGroup label="start_time" error={activeRouteFieldErrors.start_time}>
+                        <input type="datetime-local" name="start_time" className={inputClass} value={activeRoute.start_time || ""} onChange={(e) => handleRouteFieldChange('start_time', e.target.value)} />
+                        {activeRoute.start_time ? (
+                          <p className="text-[10px] text-gray-500 mt-1">{formatDateTime(activeRoute.start_time)}</p>
+                        ) : null}
+                      </FieldGroup>
+                      <FieldGroup label="end_time" error={activeRouteFieldErrors.end_time}>
                         <input type="datetime-local" name="end_time" className={inputClass} value={activeRoute.end_time || ""} onChange={(e) => handleRouteFieldChange('end_time', e.target.value)} />
+                        {activeRoute.end_time ? (
+                          <p className="text-[10px] text-gray-500 mt-1">{formatDateTime(activeRoute.end_time)}</p>
+                        ) : null}
                       </FieldGroup>
                   </div>
-                  <FieldGroup label="created_date"><input type="date" name="created_date" className={inputClass} value={formData.created_date} onChange={handleInputChange} /></FieldGroup>
+                  <FieldGroup label="created_date">
+                    <input type="date" name="created_date" className={inputClass} value={formData.created_date} onChange={handleInputChange} />
+                    <DateFieldHint value={formData.created_date} prefix="Trip created" />
+                  </FieldGroup>
                 </div>
               )}
 
@@ -1022,75 +1733,179 @@ export default function CreateTripPage() {
                     <div className="p-3 bg-rose-50 text-rose-600 rounded-2xl shadow-sm border border-rose-100/50"><DollarSign size={24} /></div>
                     <div>
                       <h2 className="text-xl font-black text-[#172B4D] tracking-tight">Financials & Audits</h2>
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Billing & settlement details</p>
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">
+                        Per-LR billing · {isHiredCarrier ? 'Hired Carrier' : 'Own Fleet'}
+                      </p>
                     </div>
-                    <ScopeBadge variant="trip" />
+                    <ScopeBadge variant="lr" />
                   </div>
-                  
+
                   <div className="max-w-4xl">
-                    <GroupHeader title="Primary Charges" />
-                    <MetricsRow label="booked_price" suffix="₹">
-                      <input type="number" name="booked_price" className={inputClass} value={formData.booked_price || ""} onChange={handleInputChange} placeholder="0.00" />
-                    </MetricsRow>
-                    <MetricsRow label="total_freight_charge" suffix="₹">
-                      <input type="number" name="total_freight_charge" className={inputClass} value={formData.total_freight_charge || "0.00"} onChange={handleInputChange} />
-                    </MetricsRow>
-                    <MetricsRow label="total_accessorial_charge" suffix="₹">
-                      <input type="number" name="total_accessorial_charge" className={inputClass} value={formData.total_accessorial_charge || "0.00"} onChange={handleInputChange} />
-                    </MetricsRow>
+                    {(selectedOrders || []).length > 0 ? (
+                      <>
+                        <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3 mb-4">
+                          <div className="flex items-center justify-between gap-3 mb-3">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">LR finance scope</span>
+                            <LRTabStrip
+                              linkedOrders={selectedOrders.map((o) => ({ order_id: o.id, lr_number: o.lr_number }))}
+                              activeOrderId={activeRouteOrderId}
+                              onChange={setActiveRouteOrderId}
+                              maxVisible={5}
+                            />
+                          </div>
+                          <div className="grid grid-cols-3 gap-3 text-xs">
+                            <div className="rounded-lg border border-amber-100 bg-amber-50 p-2">
+                              <p className="font-black text-amber-800 uppercase tracking-wider">Freight (LR)</p>
+                              <p className="mt-1 text-gray-700">₹ {activeFinanceOrder?.freight_charges || '0.00'}</p>
+                            </div>
+                            <div className="rounded-lg border border-amber-100 bg-amber-50 p-2">
+                              <p className="font-black text-amber-800 uppercase tracking-wider">Consignment Value</p>
+                              <p className="mt-1 text-gray-700">₹ {activeFinanceOrder?.consignment_value || '0.00'}</p>
+                            </div>
+                            <div className="rounded-lg border border-amber-100 bg-amber-50 p-2">
+                              <p className="font-black text-amber-800 uppercase tracking-wider">Advance Received</p>
+                              <p className="mt-1 text-gray-700">₹ {activeFinanceOrder?.advance_received || '0.00'}</p>
+                            </div>
+                          </div>
+                        </div>
 
-                    <GroupHeader title="Taxes & TDS" />
-                    <MetricsRow label="total_tax" suffix="₹">
-                      <input type="number" name="total_tax" className={inputClass} value={formData.total_tax || "0.00"} onChange={handleInputChange} />
-                    </MetricsRow>
-                    <MetricsRow label="tds" suffix="%">
-                       <input type="number" name="tds_percentage" className={inputClass} value={formData.tds_percentage || "0.00"} onChange={handleInputChange} />
-                    </MetricsRow>
-                    <MetricsRow label="tds_amount" suffix="₹">
-                      <input type="number" name="tds_amount" className={inputClass} value={formData.tds_amount || "0.00"} onChange={handleInputChange} />
-                    </MetricsRow>
+                        <GroupHeader title="Customer Billing" />
+                        <MetricsRow label="freight_charge" suffix="₹">
+                          <input type="number" className={inputClass} value={activeFinance.freight_charge || ''} onChange={(e) => handleFinanceFieldChange(activeRouteOrderId, 'freight_charge', e.target.value)} placeholder="0.00" />
+                        </MetricsRow>
+                        <MetricsRow label="accessorial_charge" suffix="₹">
+                          <input type="number" className={inputClass} value={activeFinance.accessorial_charge || ''} onChange={(e) => handleFinanceFieldChange(activeRouteOrderId, 'accessorial_charge', e.target.value)} placeholder="0.00" />
+                        </MetricsRow>
+                        <MetricsRow label="tax" suffix="₹">
+                          <input type="number" className={inputClass} value={activeFinance.tax || ''} onChange={(e) => handleFinanceFieldChange(activeRouteOrderId, 'tax', e.target.value)} placeholder="0.00" />
+                        </MetricsRow>
+                        <MetricsRow label="bill_amount" suffix="₹">
+                          <input type="number" className={`${inputClass} !bg-blue-50/30 text-blue-700 font-black`} value={activeFinance.bill_amount || ''} readOnly placeholder="Auto" />
+                        </MetricsRow>
 
-                    <GroupHeader title="Adjustments" />
-                    <MetricsRow label="incentive_amount" suffix="₹">
-                      <input type="number" name="incentive_amount" className={inputClass} value={formData.incentive_amount || "0.00"} onChange={handleInputChange} />
-                    </MetricsRow>
-                    <MetricsRow label="late_fee" suffix="₹">
-                      <input type="number" name="late_fee" className={inputClass} value={formData.late_fee || "0.00"} onChange={handleInputChange} />
-                    </MetricsRow>
-                    <MetricsRow label="part_load_charge" suffix="₹">
-                      <input type="number" name="part_load_charge" className={inputClass} value={formData.part_load_charge || "0.00"} onChange={handleInputChange} />
-                    </MetricsRow>
-                    <MetricsRow label="damage_amount" suffix="₹">
-                      <input type="number" name="damage_amount" className={inputClass} value={formData.damage_amount || "0.00"} onChange={handleInputChange} />
-                    </MetricsRow>
+                        {isHiredCarrier && (
+                          <>
+                            <GroupHeader title="Carrier / Owner" />
+                            <MetricsRow label="booked_price" suffix="₹">
+                              <input type="number" className={inputClass} value={activeFinance.booked_price || ''} onChange={(e) => handleFinanceFieldChange(activeRouteOrderId, 'booked_price', e.target.value)} placeholder="0.00" />
+                            </MetricsRow>
+                            <MetricsRow label="tds_percentage" suffix="%">
+                              <input type="number" className={inputClass} value={activeFinance.tds_percentage || ''} onChange={(e) => handleFinanceFieldChange(activeRouteOrderId, 'tds_percentage', e.target.value)} placeholder="0.00" />
+                            </MetricsRow>
+                            <MetricsRow label="tds_amount" suffix="₹">
+                              <input type="number" className={`${inputClass} !bg-gray-50/70 text-gray-500`} value={activeFinance.tds_amount || ''} readOnly placeholder="Auto" />
+                            </MetricsRow>
+                            <MetricsRow label="broker_commission" suffix="₹">
+                              <input type="number" className={inputClass} value={activeFinance.broker_commission || ''} onChange={(e) => handleFinanceFieldChange(activeRouteOrderId, 'broker_commission', e.target.value)} placeholder="0.00" />
+                            </MetricsRow>
+                            <MetricsRow label="net_payable" suffix="₹">
+                              <input type="number" className={`${inputClass} !bg-emerald-50/40 text-emerald-700 font-black`} value={activeFinance.net_payable || ''} readOnly placeholder="Auto" />
+                            </MetricsRow>
+                          </>
+                        )}
 
-                    <GroupHeader title="Final Settlement" />
-                    <MetricsRow label="broker_commission" suffix="₹">
-                      <input type="number" name="broker_commission" className={inputClass} value={formData.broker_commission || "0.00"} onChange={handleInputChange} />
-                    </MetricsRow>
-                    <MetricsRow label="total_bill_amount" suffix="₹">
-                      <input type="number" name="total_bill_amount" className={`${inputClass} !bg-blue-50/30 text-blue-700 font-black`} value={formData.total_bill_amount || "0.00"} onChange={handleInputChange} />
-                    </MetricsRow>
-                    <MetricsRow label="payment_received_amount" suffix="₹">
-                      <input type="number" name="payment_received_amount" className={inputClass} value={formData.payment_received_amount || "0.00"} onChange={handleInputChange} />
-                    </MetricsRow>
-                    
-                    <div className="h-4" />
-                    <div className="grid grid-cols-2 gap-6">
-                      <FieldGroup label="pod_received_date"><input type="date" name="pod_received_date" className={inputClass} value={formData.pod_received_date || ""} onChange={handleInputChange} /></FieldGroup>
-                      <FieldGroup label="payment_received_date"><input type="date" name="payment_received_date" className={inputClass} value={formData.payment_received_date || ""} onChange={handleInputChange} /></FieldGroup>
-                    </div>
+                        {!isHiredCarrier && (
+                          <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/50 px-4 py-3 mb-4 text-xs text-gray-500">
+                            Own fleet — no carrier hire cost. Vehicle running costs are tracked via Expenses after trip creation.
+                          </div>
+                        )}
 
-                    <div className="flex gap-8 items-center bg-gray-50/50 p-5 rounded-2xl border border-gray-100 mt-6 transition-all hover:bg-white hover:shadow-sm">
-                      <label className="flex items-center gap-3 cursor-pointer group">
-                        <input type="checkbox" name="is_billed" checked={formData.is_billed || false} onChange={handleInputChange} className="w-5 h-5 rounded-lg text-[#4a6cf7] border-gray-300 focus:ring-[#4a6cf7]" />
-                        <span className="text-[11px] font-black uppercase tracking-widest text-[#64748b] group-hover:text-[#4a6cf7] transition-colors">is_billed</span>
-                      </label>
-                      <label className="flex items-center gap-3 cursor-pointer group">
-                        <input type="checkbox" name="is_paid" checked={formData.is_paid || false} onChange={handleInputChange} className="w-5 h-5 rounded-lg text-[#4a6cf7] border-gray-300 focus:ring-[#4a6cf7]" />
-                        <span className="text-[11px] font-black uppercase tracking-widest text-[#64748b] group-hover:text-[#4a6cf7] transition-colors">is_paid</span>
-                      </label>
-                    </div>
+                        <GroupHeader title="Adjustments" />
+                        <MetricsRow label="incentive_amount" suffix="₹">
+                          <input type="number" className={inputClass} value={activeFinance.incentive_amount || ''} onChange={(e) => handleFinanceFieldChange(activeRouteOrderId, 'incentive_amount', e.target.value)} placeholder="0.00" />
+                        </MetricsRow>
+                        <MetricsRow label="late_fee" suffix="₹">
+                          <input type="number" className={inputClass} value={activeFinance.late_fee || ''} onChange={(e) => handleFinanceFieldChange(activeRouteOrderId, 'late_fee', e.target.value)} placeholder="0.00" />
+                        </MetricsRow>
+                        <MetricsRow label="part_load_charge" suffix="₹">
+                          <input type="number" className={inputClass} value={activeFinance.part_load_charge || ''} onChange={(e) => handleFinanceFieldChange(activeRouteOrderId, 'part_load_charge', e.target.value)} placeholder="0.00" />
+                        </MetricsRow>
+                        <MetricsRow label="damage_amount" suffix="₹">
+                          <input type="number" className={inputClass} value={activeFinance.damage_amount || ''} onChange={(e) => handleFinanceFieldChange(activeRouteOrderId, 'damage_amount', e.target.value)} placeholder="0.00" />
+                        </MetricsRow>
+
+                        <GroupHeader title="Settlement" />
+                        <MetricsRow label="payment_received_amount" suffix="₹">
+                          <input type="number" className={inputClass} value={activeFinance.payment_received_amount || ''} onChange={(e) => handleFinanceFieldChange(activeRouteOrderId, 'payment_received_amount', e.target.value)} placeholder="0.00" />
+                        </MetricsRow>
+                        <div className="grid grid-cols-2 gap-6 border-x border-b border-gray-200 px-5 py-4 bg-white">
+                          <FieldGroup label="pod_received_date">
+                            <input type="date" className={inputClass} value={activeFinance.pod_received_date || ''} onChange={(e) => handleFinanceFieldChange(activeRouteOrderId, 'pod_received_date', e.target.value || null)} />
+                            <DateFieldHint value={activeFinance.pod_received_date} prefix="POD received" />
+                          </FieldGroup>
+                          <FieldGroup label="payment_received_date">
+                            <input type="date" className={inputClass} value={activeFinance.payment_received_date || ''} onChange={(e) => handleFinanceFieldChange(activeRouteOrderId, 'payment_received_date', e.target.value || null)} />
+                            <DateFieldHint value={activeFinance.payment_received_date} prefix="Payment received" />
+                          </FieldGroup>
+                        </div>
+                        <div className="flex gap-8 items-center bg-gray-50/50 p-5 border-x border-b border-gray-200 rounded-b-2xl mb-6">
+                          <label className="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" checked={activeFinance.is_billed || false} onChange={(e) => handleFinanceFieldChange(activeRouteOrderId, 'is_billed', e.target.checked)} className="w-5 h-5 rounded-lg text-[#4a6cf7] border-gray-300" />
+                            <span className="text-[11px] font-black uppercase tracking-widest text-[#64748b]">is_billed</span>
+                          </label>
+                          <label className="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" checked={activeFinance.is_paid || false} onChange={(e) => handleFinanceFieldChange(activeRouteOrderId, 'is_paid', e.target.checked)} className="w-5 h-5 rounded-lg text-[#4a6cf7] border-gray-300" />
+                            <span className="text-[11px] font-black uppercase tracking-widest text-[#64748b]">is_paid</span>
+                          </label>
+                        </div>
+
+                        <GroupHeader title="Billing Summary (All LRs)" />
+                        <div className="border-x border-b border-gray-200 rounded-b-2xl overflow-x-auto bg-white">
+                          <table className="w-full text-xs">
+                            <thead className="bg-gray-50 text-[10px] uppercase tracking-widest text-gray-500">
+                              <tr>
+                                <th className="text-left px-4 py-2">LR</th>
+                                <th className="text-right px-4 py-2">Bill Amount</th>
+                                {isHiredCarrier && (
+                                  <>
+                                    <th className="text-right px-4 py-2">Booked</th>
+                                    <th className="text-right px-4 py-2">TDS</th>
+                                    <th className="text-right px-4 py-2">Net</th>
+                                  </>
+                                )}
+                                <th className="text-right px-4 py-2">Paid Recd.</th>
+                                <th className="text-left px-4 py-2">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {financeSummary.rows.map(({ id, order, fin }) => (
+                                <tr key={id} className="border-t border-gray-100">
+                                  <td className="px-4 py-2 font-bold text-gray-700">{order?.lr_number || id}</td>
+                                  <td className="px-4 py-2 text-right">₹ {fin.bill_amount || '0.00'}</td>
+                                  {isHiredCarrier && (
+                                    <>
+                                      <td className="px-4 py-2 text-right">₹ {fin.booked_price || '0.00'}</td>
+                                      <td className="px-4 py-2 text-right">₹ {fin.tds_amount || '0.00'}</td>
+                                      <td className="px-4 py-2 text-right">₹ {fin.net_payable || '0.00'}</td>
+                                    </>
+                                  )}
+                                  <td className="px-4 py-2 text-right">₹ {fin.payment_received_amount || '0.00'}</td>
+                                  <td className="px-4 py-2">
+                                    {fin.is_billed ? '✅ Billed' : '⬜ Unbilled'}
+                                    {fin.is_paid ? ' · Paid' : ''}
+                                  </td>
+                                </tr>
+                              ))}
+                              <tr className="border-t-2 border-gray-200 bg-gray-50 font-black">
+                                <td className="px-4 py-2">TOTAL</td>
+                                <td className="px-4 py-2 text-right">₹ {financeSummary.totals.bill_amount.toFixed(2)}</td>
+                                {isHiredCarrier && (
+                                  <>
+                                    <td className="px-4 py-2 text-right">₹ {financeSummary.totals.booked_price.toFixed(2)}</td>
+                                    <td className="px-4 py-2 text-right">₹ {financeSummary.totals.tds_amount.toFixed(2)}</td>
+                                    <td className="px-4 py-2 text-right">₹ {financeSummary.totals.net_payable.toFixed(2)}</td>
+                                  </>
+                                )}
+                                <td className="px-4 py-2 text-right">₹ {financeSummary.totals.payment_received_amount.toFixed(2)}</td>
+                                <td className="px-4 py-2" />
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-sm text-gray-500">Select at least one LR in Step 1 to enter billing details.</p>
+                    )}
                   </div>
                 </div>
               )}
@@ -1126,6 +1941,11 @@ export default function CreateTripPage() {
                       <div className="flex flex-col"><span className="text-gray-400 text-xs font-bold uppercase">Route</span><span className="font-bold text-gray-700">{primaryRoutePreview.origin_address && primaryRoutePreview.destination_address ? `${primaryRoutePreview.origin_address} → ${primaryRoutePreview.destination_address}` : 'Not fully specified'}</span></div>
                       <div className="flex flex-col"><span className="text-gray-400 text-xs font-bold uppercase">trip_type</span><span className="font-bold text-gray-700">{formData.trip_type}</span></div>
                       <div className="flex flex-col"><span className="text-gray-400 text-xs font-bold uppercase">status</span><span className="font-bold text-blue-600">{formData.status}</span></div>
+                      <div className="flex flex-col"><span className="text-gray-400 text-xs font-bold uppercase">Ownership</span><span className="font-bold text-gray-700">{isHiredCarrier ? 'Hired Carrier' : 'Own Fleet'}</span></div>
+                      <div className="flex flex-col"><span className="text-gray-400 text-xs font-bold uppercase">Scheduled pickup</span><span className="font-bold text-gray-700">{primaryRoutePreview.scheduled_pickup_date ? formatDate(primaryRoutePreview.scheduled_pickup_date) : '—'}</span></div>
+                      <div className="flex flex-col"><span className="text-gray-400 text-xs font-bold uppercase">Scheduled delivery</span><span className="font-bold text-gray-700">{primaryRoutePreview.scheduled_delivery_date ? formatDate(primaryRoutePreview.scheduled_delivery_date) : '—'}</span></div>
+                      <div className="flex flex-col"><span className="text-gray-400 text-xs font-bold uppercase">Created date</span><span className="font-bold text-gray-700">{formData.created_date ? formatDate(formData.created_date) : '—'}</span></div>
+                      <div className="flex flex-col"><span className="text-gray-400 text-xs font-bold uppercase">Total bill (all LRs)</span><span className="font-bold text-emerald-700">₹ {financeSummary.totals.bill_amount.toFixed(2)}</span></div>
                     </div>
                   </div>
                   <div className="bg-white border border-gray-100 rounded-xl p-4">
@@ -1133,11 +1953,27 @@ export default function CreateTripPage() {
                     <div className="space-y-2">
                       {selectedOrders.map((o) => {
                         const route = routesByOrder[o.id] || buildRouteState(o.id);
+                        const fin = calcLRFinance(financeByOrder[o.id] || DEFAULT_LR_FINANCE, formData.vehicle_ownership_type);
                         return (
                           <details key={o.id} className="rounded-lg border border-gray-100 bg-gray-50/40 px-3 py-2">
-                            <summary className="cursor-pointer text-xs font-bold text-[#172B4D]">{o.lr_number}</summary>
+                            <summary className="cursor-pointer text-xs font-bold text-[#172B4D]">
+                              {o.lr_number} · Bill ₹ {fin.bill_amount || '0.00'}
+                              {fin.is_billed ? ' · ✅ Billed' : ' · ⬜ Unbilled'}
+                            </summary>
                             <p className="text-xs text-gray-600 mt-2">{route.origin_address || '—'} {'->'} {route.destination_address || '—'}</p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              Schedule: {route.scheduled_pickup_date ? formatDate(route.scheduled_pickup_date) : '—'}
+                              {' → '}
+                              {route.scheduled_delivery_date ? formatDate(route.scheduled_delivery_date) : '—'}
+                            </p>
                             <p className="text-xs text-gray-500 mt-1">Stops: {(route.stops || []).filter((s) => (s.location_address || '').trim()).length}</p>
+                            {isHiredCarrier ? (
+                              <p className="text-xs text-gray-600 mt-1">
+                                Carrier: Booked ₹ {fin.booked_price || '0.00'} · TDS ₹ {fin.tds_amount || '0.00'} · Net ₹ {fin.net_payable || '0.00'}
+                              </p>
+                            ) : (
+                              <p className="text-xs text-gray-500 mt-1 italic">Own fleet — no carrier cost</p>
+                            )}
                           </details>
                         );
                       })}
@@ -1176,7 +2012,6 @@ export default function CreateTripPage() {
                     key="next-btn"
                     type="button"
                     onClick={handleNext}
-                    disabled={hasErrors || (currentStep === 3 && stopErrors.length > 0)}
                     className="flex items-center gap-2 px-8 py-2.5 bg-[#4a6cf7] text-white font-bold text-sm rounded-xl hover:bg-[#3b59d9] shadow-lg shadow-blue-100 transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:scale-100 disabled:shadow-none"
                   >
                     Next Step <ChevronRight size={18} />
@@ -1185,7 +2020,7 @@ export default function CreateTripPage() {
                   <button 
                     key="submit-btn"
                     type="submit"
-                    disabled={createTripMutation.isPending || hasErrors}
+                    disabled={createTripMutation.isPending}
                     className="flex items-center gap-2 px-10 py-2.5 bg-green-600 text-white font-bold text-sm rounded-xl hover:bg-green-700 shadow-lg shadow-green-100 transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:scale-100 disabled:shadow-none"
                   >
                     {createTripMutation.isPending ? 'Syncing...' : 'Create Trip'} <CheckCircle2 size={18} />

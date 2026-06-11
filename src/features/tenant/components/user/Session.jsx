@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, RotateCcw, Monitor, Smartphone, Globe, Shield, ShieldCheck, ShieldAlert, X, Eye, Clock, Calendar, User, ChevronLeft, ChevronRight, LogOut, Info } from 'lucide-react';
 import { useSessions, useRevokeSession } from '../../queries/users/sessionsQuery';
+import { formatDate, formatDateTime, formatDateShort, toInputDate } from '@/utils/dateFormat';
 
 const Session = () => {
   const [currentPage, setCurrentPage] = useState(1);
@@ -237,7 +238,7 @@ const Session = () => {
                       <div className="flex flex-col">
                         <span className="text-xs font-black text-gray-700 uppercase tracking-tighter flex items-center gap-1.5">
                           <Calendar size={12} className="text-gray-300" />
-                          {session.login_at ? new Date(session.login_at).toLocaleDateString() : 'N/A'}
+                          {session.login_at ? formatDate(session.login_at) : 'N/A'}
                         </span>
                         <span className="text-[10px] text-gray-400 font-bold mt-1 flex items-center gap-1.5">
                           <Clock size={12} className="text-gray-300" />
@@ -316,7 +317,7 @@ const Session = () => {
               <div className="grid grid-cols-2 gap-6 pt-6 border-t border-gray-100">
                 <div className="space-y-1">
                   <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Login Timestamp</p>
-                  <p className="text-xs font-bold text-gray-900">{new Date(selectedSession.login_at).toLocaleString()}</p>
+                  <p className="text-xs font-bold text-gray-900">{formatDateTime(selectedSession.login_at)}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Network Source</p>

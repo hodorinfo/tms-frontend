@@ -6,6 +6,7 @@ import {
 import { useVehicles } from '../../../queries/vehicles/vehicleQuery';
 import { useVehicleTypes } from '../../../queries/vehicles/vehicletypeQuery';
 import { useDrivers } from '../../../queries/drivers/driverCoreQuery';
+import { formatDateShort } from '@/utils/dateFormat';
 
 // ── Generic Badge ─────────────────────────────────────────────────────
 export const Badge = ({ children, className = '' }) => (
@@ -38,14 +39,7 @@ export const OWNERSHIP_COLORS = {
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────
-export const fmtDate = (iso) => {
-  if (!iso) return '—';
-  try {
-    return new Date(iso).toLocaleDateString('en-IN', {
-      year: 'numeric', month: 'short', day: '2-digit'
-    });
-  } catch (e) { return iso; }
-};
+export const fmtDate = (iso) => formatDateShort(iso);
 
 export const fmtKm = (n) =>
   n != null ? `${Number(n).toLocaleString('en-IN')} km` : '—';
